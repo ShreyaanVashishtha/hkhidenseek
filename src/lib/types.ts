@@ -21,7 +21,7 @@ export interface QuestionOption {
   id: string;
   name: string;
   category: QuestionCategory;
-  cost: number; 
+  cost: number;
   hiderCoinsEarned: number;
   description: string;
   seekerPrompt?: string;
@@ -56,15 +56,15 @@ export interface CurseRule {
   icon: React.ElementType;
   durationMinutes?: number;
   requiresSeekerAction?: 'photo' | 'confirmation';
-  requiresHiderTextInput?: boolean; 
+  requiresHiderTextInput?: boolean;
 }
 
 
 export interface ActiveCurseInfo {
-  curseId: number; 
+  curseId: number;
   startTime: Date;
-  hiderInputText?: string; 
-  seekerSubmittedPhoto?: File; 
+  hiderInputText?: string;
+  seekerSubmittedPhoto?: File;
   resolutionStatus?: 'pending_seeker_action' | 'pending_hider_acknowledgement' | 'resolved';
 }
 
@@ -86,7 +86,7 @@ export interface GameState {
   currentRound: GameRound | null;
   gameHistory: GameRound[];
   mtrMapUrl?: string;
-  adminPin?: string; // PINs are global settings
+  adminPin?: string; // PINs are global settings, set by admin
   hiderPin?: string;
   seekerPin?: string;
   // Authentication statuses are NOT part of the shared state
