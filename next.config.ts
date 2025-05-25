@@ -25,7 +25,7 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: 'https',
-        hostname: 'wikrlnhtnqrggkabmamu.supabase.co', // Added Supabase storage hostname
+        hostname: 'wikrlnhtnqrggkabmamu.supabase.co', // Supabase storage hostname
         port: '',
         pathname: '/**',
       }

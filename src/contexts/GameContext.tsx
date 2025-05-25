@@ -24,12 +24,12 @@ const defaultGameState: GameState = {
 const deserializeState = (data: any): GameState => {
   if (!data) return { ...defaultGameState };
 
-  const deserializeDatesAndFiles = (obj: any): any => {
+  const deserializeDates = (obj: any): any => {
     if (obj === null || obj === undefined || typeof obj !== 'object') {
       return obj;
     }
     if (Array.isArray(obj)) {
-      return obj.map(deserializeDatesAndFiles);
+      return obj.map(deserializeDates);
     }
     const newObj: any = {};
     for (const key in obj) {
@@ -38,32 +38,42 @@ const deserializeState = (data: any): GameState => {
         if (typeof value === 'string' && (key === 'timestamp' || key === 'startTime' || key === 'phaseStartTime' || key === 'endTime')) {
           const date = new Date(value);
           newObj[key] = !isNaN(date.getTime()) ? date : value;
-        } else if ((key === 'seekerSubmittedPhoto') && value !== null && typeof value === 'object' && !(value instanceof Date) && !(value instanceof File) ) {
-          // This was for handling File objects if they were stringified.
-          // Now, seekerSubmittedPhoto remains a File locally and is not directly part of game_data JSON for Supabase.
-          // The `response` field for AskedQuestion is now a string (URL), so direct File handling here is less critical.
-          newObj[key] = null; 
-        } else {
-          newObj[key] = deserializeDatesAndFiles(value);
+        } else if (key === 'seekerSubmittedPhoto' && value !== null && typeof value === 'object' && !(value instanceof Date) && !(value instanceof File) ) {
+           // seekerSubmittedPhoto is handled locally as a File, not stored in Supabase JSON game_data
+           newObj[key] = null; 
+        }
+        else {
+          newObj[key] = deserializeDates(value);
         }
       }
     }
     return newObj;
   };
   
-  const deserialized = deserializeDatesAndFiles(data);
+  let deserialized = deserializeDates(data);
   let merged = { ...defaultGameState, ...deserialized };
   
   merged.adminPin = merged.adminPin === "" ? undefined : (merged.adminPin ?? defaultGameState.adminPin);
   merged.hiderPin = merged.hiderPin === "" ? undefined : merged.hiderPin;
   merged.seekerPin = merged.seekerPin === "" ? undefined : merged.seekerPin;
+
+  // Ensure askedQuestions response is a string (URL or text), not File
+  if (merged.currentRound && merged.currentRound.askedQuestions) {
+    merged.currentRound.askedQuestions = merged.currentRound.askedQuestions.map(q => {
+      if (q.response && typeof q.response !== 'string') {
+        // This might happen if old state with File objects was somehow stringified.
+        // For new state, response should already be a string (URL).
+        return { ...q, response: '[Invalid Response Format]' };
+      }
+      return q;
+    });
+  }
   return merged;
 };
 
 const serializeStateForSupabase = (state: GameState): any => {
-  // File objects are handled during the upload process (e.g., in answerQuestion)
-  // seekerSubmittedPhoto in ActiveCurseInfo is a local File object, not part of the JSON sent to Supabase.
-  // The `response` field for AskedQuestion is now a string (URL or text).
+  // File objects (like seekerSubmittedPhoto in ActiveCurseInfo) are NOT part of the JSON sent to Supabase.
+  // Question responses are now URLs (strings) or text.
   return JSON.parse(JSON.stringify(state, (key, value) => {
     if (key === 'seekerSubmittedPhoto' && value instanceof File) {
       return null; // Ensure File objects in ActiveCurseInfo are not stringified
@@ -77,7 +87,7 @@ const uploadPhotoToSupabaseStorage = async (file: File, pathPrefix: string = 'pu
   try {
     const filePath = `${pathPrefix}/${Date.now()}-${file.name.replace(/\s+/g, '_')}`;
     const { data, error } = await supabase.storage
-      .from('game-assets') // Ensure this bucket exists and is public
+      .from('game-assets') // Ensure this bucket name matches your Supabase setup
       .upload(filePath, file);
 
     if (error) {
@@ -139,6 +149,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   const [isMobile, setIsMobile] = useState(false);
   const [isLoadingState, setIsLoadingState] = useState(true);
 
+  // Client-specific authentication state
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [isHiderAuthenticated, setIsHiderAuthenticated] = useState(false);
   const [isSeekerAuthenticated, setIsSeekerAuthenticated] = useState(false);
@@ -201,6 +212,10 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         } else if (data && data.game_data) {
           console.log("[INIT] Game state found in Supabase. Deserializing...");
           const loadedState = deserializeState(data.game_data);
+          // Ensure default admin PIN is set if not present in loaded state
+          if (loadedState.adminPin === undefined) {
+            loadedState.adminPin = defaultGameState.adminPin;
+          }
           setGameStateInternal(loadedState); 
           gameStateRef.current = loadedState;
         } else { 
@@ -223,7 +238,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       } catch (e) {
         console.error("[INIT] Critical error during fetchInitialState:", e);
         toast({ title: "Initialization Error", description: "Could not initialize game state.", variant: "destructive" });
-        setGameStateInternal(defaultGameState); // Fallback
+        setGameStateInternal(defaultGameState); 
         gameStateRef.current = defaultGameState;
       } finally {
         setIsLoadingState(false); 
@@ -253,7 +268,6 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
             
             const newGameStateFromSupabase = deserializeState(incomingGameData);
             setGameStateInternal(newGameStateFromSupabase); 
-            // gameStateRef.current is updated by the useEffect watching gameStateInternal
             console.log('[REALTIME] Local state updated from Supabase. New Admin PIN in context:', newGameStateFromSupabase.adminPin, 'New currentRound status:', newGameStateFromSupabase.currentRound?.status);
           } else {
             console.log('[REALTIME] Payload did not contain new.game_data or new was null.');
@@ -275,7 +289,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       console.log('[REALTIME] Removing Supabase channel subscription.');
       supabase.removeChannel(channel).catch(err => console.error('[REALTIME] Error removing channel:', err));
     };
-  }, []); 
+  }, []); // Empty dependency array ensures this runs only once
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
@@ -341,6 +355,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
           if (isHiding) {
              newRoleTeam.coins = team.coins === 0 && INITIAL_COINS_HIDER_START === 0 ? 0 : (team.coins || INITIAL_COINS_HIDER_START);
             newRoleTeam.cursesUsed = 0;
+          } else if (isSeeking) {
+            newRoleTeam.coins = 0; // Seekers start with 0 coins
           }
           return newRoleTeam;
         }
@@ -361,7 +377,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
           updatedTeam.cursesUsed = 0;
           updatedTeam.coins = updatedTeam.coins || INITIAL_COINS_HIDER_START; 
         } else if (t.isSeeking) {
-          // Seekers have unlimited coins by design now
+          updatedTeam.coins = 0; // Ensure seekers start with 0 coins
         }
         return updatedTeam;
       });
@@ -529,7 +545,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         toast({ title: "Photo Uploaded!", description: "Your photo response has been sent." });
       } else {
         toast({ title: "Upload Failed", description: "Could not upload photo. Please try again.", variant: "destructive" });
-        finalResponse = "[Photo Upload Failed]"; // Store an error message or leave undefined
+        finalResponse = "[Photo Upload Failed]"; 
       }
     }
 
@@ -606,15 +622,13 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
 
       if (actualCurseDetails.requiresSeekerAction === 'photo' && photoFile) {
         // toast({ title: "Photo Submitted for Curse", description: "Awaiting hider acknowledgement." });
-        // The File object for seekerSubmittedPhoto is managed locally in SeekerPageContent and not directly synced via game_data
-        // Instead, we update the resolutionStatus and expect the hider to see this change.
         return {
           ...prev,
           currentRound: {
             ...prev.currentRound,
             activeCurse: {
               ...prev.currentRound.activeCurse,
-              seekerSubmittedPhoto: photoFile, // This is for local display/handling before hider acks
+              seekerSubmittedPhoto: photoFile, 
               resolutionStatus: 'pending_hider_acknowledgement',
             },
           },
@@ -637,7 +651,6 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     });
   }, [setGameState]);
   
-  // Renamed set...Pin to set...PinCtx to avoid conflict with useState setters if any.
   const setAdminPinCtx = useCallback((pin: string) => {
     const newPin = pin.trim() === "" ? undefined : pin.trim();
     setGameState(prev => ({ ...prev, adminPin: newPin }));
@@ -664,7 +677,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
 
   const authenticateAdmin = useCallback((enteredPin: string): boolean => {
     const effectiveAdminPin = gameStateRef.current.adminPin; 
-    if (effectiveAdminPin && effectiveAdminPin === enteredPin) {
+    if ((!effectiveAdminPin && enteredPin === "113221") || (effectiveAdminPin && effectiveAdminPin === enteredPin)) {
       setIsAdminAuthenticated(true);
       if (typeof window !== 'undefined') localStorage.setItem(LOCAL_STORAGE_AUTH_PREFIX + 'admin', 'true');
       return true;

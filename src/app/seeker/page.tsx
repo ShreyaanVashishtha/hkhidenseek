@@ -21,7 +21,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { PinProtectPage } from '@/components/auth/PinProtectPage';
 
 interface PhotoResponseDisplayProps {
-  imageUrl: string; // Expect a URL string
+  imageUrl: string; 
 }
 
 const PhotoResponseDisplay: React.FC<PhotoResponseDisplayProps> = ({ imageUrl }) => {
@@ -127,6 +127,7 @@ function SeekerPageContent() {
         const userTeam = teams.find(t => currentRound.seekingTeams.some(st => st.id === t.id) && t.isSeeking);
         setMyTeam(userTeam);
     } else if (teams.some(t => t.isSeeking)) {
+        // Fallback if currentRound.seekingTeams is not yet populated but a team is marked as seeker
         setMyTeam(teams.find(t => t.isSeeking)); 
     } else {
         setMyTeam(undefined); 
@@ -148,7 +149,7 @@ function SeekerPageContent() {
       description: currentChallengeDescription,
       status,
     };
-    setChallenges(prev => [challenge, ...prev]); // Local state for challenge history
+    setChallenges(prev => [challenge, ...prev]); 
 
     if (status === "completed") {
       toast({ title: "Challenge Completed!", description: `Good job, ${myTeam.name}!` });
@@ -192,7 +193,7 @@ function SeekerPageContent() {
     toast({ title: "Question Asked!", description: `${selectedQuestionType.name} question sent. Hiders earn ${selectedQuestionType.hiderCoinsEarned} coins.` });
     
     setQuestionText("");
-    setSelectedQuestionType(undefined); // Reset selected question type
+    setSelectedQuestionType(undefined); 
   };
   
   const gamePhase = currentRound?.status || 'pending';
@@ -200,7 +201,7 @@ function SeekerPageContent() {
   const isSeekingPhase = gamePhase === 'seeking-phase';
   const displayedAskedQuestions = currentRound?.askedQuestions || [];
   
-  const activeCurseDetails = currentRound?.activeCurse 
+  const activeCurseDetails = currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved'
     ? CURSE_DICE_OPTIONS.find(c => c.number === currentRound.activeCurse!.curseId)
     : null;
 
@@ -303,7 +304,7 @@ function SeekerPageContent() {
                 </CardTitle>
                 <CardDescription className="text-destructive/90">
                   {activeCurseDetails.description} <br />
-                  { (activeCurseDetails.name === "Curse of the Zoologist" || activeCurseDetails.name === "Curse of the Luxury Car") && currentRound.activeCurse.hiderInputText && (
+                  { (activeCurseDetails.requiresHiderTextInput && currentRound.activeCurse.hiderInputText) && (
                     <span className="font-semibold">Hider's input: "{currentRound.activeCurse.hiderInputText}"</span>
                   )}
                   <br/>
@@ -326,7 +327,7 @@ function SeekerPageContent() {
                     }}
                     className="text-sm"
                   />
-                  {activeCurseDetails.number === 3 && ( 
+                  {activeCurseDetails.number === 3 && ( // Curse of the Gambler's Feet
                     <div className="mt-3">
                       <Button onClick={handleRollForGamblerSteps} className="w-full flex items-center gap-2">
                         <Dice6 className="h-4 w-4"/> Roll for Steps
@@ -382,7 +383,7 @@ function SeekerPageContent() {
                 <VetoConsequenceModal 
                   challengeDescription={currentChallengeDescription} 
                   onConfirmVeto={() => handleChallengeSubmit('vetoed')} 
-                  triggerDisabled={isPenaltyActive || (!!currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved')}
+                  triggerDisabled={isPenaltyActive || !currentChallengeDescription || (!!currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved')}
                 />
               }
             </CardFooter>
@@ -426,7 +427,11 @@ function SeekerPageContent() {
               </div>
             </CardContent>
             <CardFooter>
-              <Button onClick={handleAskQuestion} disabled={isPenaltyActive || !selectedQuestionType || !questionText.trim() || (!!currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved')} className="flex items-center gap-2">
+              <Button 
+                onClick={handleAskQuestion} 
+                disabled={isPenaltyActive || !selectedQuestionType || !questionText.trim() || (!!currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved')} 
+                className="flex items-center gap-2"
+              >
                 <Send /> Ask Question
               </Button>
             </CardFooter>
@@ -451,7 +456,7 @@ function SeekerPageContent() {
                             ? <PhotoResponseDisplay imageUrl={q.response} /> 
                             : typeof q.response === 'string'
                               ? <span className="ml-1">{q.response}</span>
-                              : "Invalid response format"}
+                              : "Invalid response format"} 
                         </div>
                       )}
                       {!q.response && <p className="mt-1 text-sm text-muted-foreground italic">Awaiting response...</p>}
