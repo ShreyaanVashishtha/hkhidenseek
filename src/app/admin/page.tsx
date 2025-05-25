@@ -10,10 +10,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useGameContext } from "@/hooks/useGameContext";
 import type { Player, Team } from "@/lib/types";
 import { PageHeader } from "@/components/PageHeader";
-import { ShieldCheck, Users, UserPlus, Play, StopCircle, Shuffle, Trash2, Map, Forward } from "lucide-react";
+import { ShieldCheck, Users, UserPlus, Play, StopCircle, Shuffle, Trash2, Map, Forward, ZapOff, Zap } from "lucide-react";
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { CURSE_DICE_OPTIONS } from '@/lib/constants';
 
 export default function AdminPage() {
   const { 
@@ -26,10 +27,11 @@ export default function AdminPage() {
     updateTeamRole,
     currentRound,
     startNewRound,
-    startSeekingPhase, // Added this
+    startSeekingPhase,
     endCurrentRound,
     mtrMapUrl,
-    setMtrMapUrl
+    setMtrMapUrl,
+    clearActiveCurse // Added this
   } = useGameContext();
   const { toast } = useToast();
 
@@ -83,7 +85,6 @@ export default function AdminPage() {
     const isHiding = role === "hider";
     const isSeeking = role === "seeker";
     
-    // Ensure only one hiding team
     if (isHiding && teams.some(t => t.isHiding && t.id !== teamId)) {
       toast({ title: "Error", description: "Only one team can be the hider.", variant: "destructive" });
       return;
@@ -134,6 +135,19 @@ export default function AdminPage() {
       toast({ title: "Error", description: "Map URL cannot be empty.", variant: "destructive" });
     }
   };
+
+  const handleClearCurse = () => {
+    if (currentRound && currentRound.activeCurse) {
+      clearActiveCurse();
+      toast({ title: "Curse Cleared", description: "The active curse has been cleared by admin." });
+    } else {
+      toast({ title: "Error", description: "No active curse to clear.", variant: "destructive" });
+    }
+  };
+  
+  const activeCurseDetails = currentRound?.activeCurse 
+    ? CURSE_DICE_OPTIONS.find(c => c.number === currentRound.activeCurse!.curseId)
+    : null;
 
   return (
     <div className="space-y-8">
@@ -223,7 +237,7 @@ export default function AdminPage() {
               <CardHeader className="pb-2">
                 <CardTitle className="text-lg">{team.name}</CardTitle>
                 <div className="text-xs">
-                  Role: {team.isHiding ? "Hider" : team.isSeeking ? "Seeker" : "None"} | Coins: {team.coins}
+                  Role: {team.isHiding ? "Hider" : team.isSeeking ? "Seeker" : "None"} | Coins: {team.coins} | Curses Used (Hider): {team.cursesUsed}
                 </div>
               </CardHeader>
               <CardContent className="py-2">
@@ -273,7 +287,12 @@ export default function AdminPage() {
         <CardHeader>
           <CardTitle>Round Management</CardTitle>
           <CardDescription>
-            {currentRound ? `Round ${currentRound.roundNumber} is in ${currentRound.status}.` : "No active round."}
+            {currentRound ? 
+              `Round ${currentRound.roundNumber} is in ${currentRound.status}. ` +
+              (currentRound.activeCurse && activeCurseDetails ? 
+                `Curse Active: ${activeCurseDetails.name}.` :
+                "No active curse.")
+            : "No active round."}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-4">
@@ -293,6 +312,14 @@ export default function AdminPage() {
             <Forward /> Force Start Seeking Phase
           </Button>
           <Button 
+            onClick={handleClearCurse} 
+            disabled={!currentRound || !currentRound.activeCurse} 
+            variant="outline"
+            className="flex items-center gap-2"
+          >
+            <ZapOff /> Clear Active Curse
+          </Button>
+          <Button 
             onClick={handleEndRound} 
             disabled={!currentRound} 
             variant="destructive" 
@@ -305,7 +332,3 @@ export default function AdminPage() {
     </div>
   );
 }
-
-    
-
-    

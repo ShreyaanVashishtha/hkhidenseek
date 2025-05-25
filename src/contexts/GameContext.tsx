@@ -113,8 +113,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     setGameState(prev => {
       const teamsWithRoundResets = prev.teams.map(t => ({
         ...t,
-        cursesUsed: t.isHiding ? 0 : t.cursesUsed,
-        coins: t.isSeeking ? 0 : (t.isHiding ? (t.coins || INITIAL_COINS_HIDER_START) : t.coins),
+        cursesUsed: t.isHiding ? 0 : t.cursesUsed, // Reset cursesUsed only for the new hider
+        coins: t.isSeeking ? 0 : (t.isHiding ? (t.coins || INITIAL_COINS_HIDER_START) : t.coins), // Reset coins for seekers, hiders keep/get initial
       }));
 
       const hidingTeamForRound = teamsWithRoundResets.find(t => t.isHiding);
@@ -171,8 +171,9 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       const finishedRound: GameRound = { ...prev.currentRound, endTime: new Date(), status: 'completed' };
       
       const updatedTeams = prev.teams.map(team => {
-        if (team.id === finishedRound.hidingTeam?.id && finishedRound.phaseStartTime && finishedRound.status === 'seeking-phase') { 
+        if (team.id === finishedRound.hidingTeam?.id && finishedRound.phaseStartTime && prev.currentRound?.status === 'seeking-phase') { 
           const hideEndTime = finishedRound.endTime || new Date();
+          // Calculate duration from start of seeking phase to end of round
           const roundHidingDuration = Math.floor((hideEndTime.getTime() - new Date(finishedRound.phaseStartTime).getTime()) / 1000);
           if (roundHidingDuration > team.hidingTimeSeconds) {
             return { ...team, hidingTimeSeconds: roundHidingDuration };
@@ -221,16 +222,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
                     coins: operation === 'add' ? currentHidingTeamCoins + amount : Math.max(0, currentHidingTeamCoins - amount)
                 };
             }
-            newCurrentRound.seekingTeams = newCurrentRound.seekingTeams.map(st => {
-                if (st.id === teamId) {
-                    const currentSeekingTeamCoins = st.coins || 0;
-                    return {
-                        ...st,
-                        coins: operation === 'add' ? currentSeekingTeamCoins + amount : Math.max(0, currentSeekingTeamCoins - amount)
-                    };
-                }
-                return st;
-            });
+            // Seekers don't have coins, so no need to update them here for 'seekingTeams'
         }
 
         return {
@@ -337,9 +329,6 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         return prev;
       }
       
-      // CursesUsed is now handled by recordCurseUsed, called separately by Hider page after input if needed.
-      // Ensure we don't exceed MAX_CURSES_PER_ROUND before calling activateCurse.
-
       const activeCurseInfo: ActiveCurseInfo = {
         curseId: rolledCurseNumber,
         startTime: new Date(),
@@ -374,11 +363,9 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const seekerCompletesCurseAction = useCallback(() => {
-    // For now, this just clears the curse.
-    // Could be expanded later if seeker actions need to affect game state beyond clearing.
     clearActiveCurse();
     toast({title: "Curse Resolved", description: "Seeker action completed."})
-  }, []);
+  }, [clearActiveCurse]);
 
 
   return (
