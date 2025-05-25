@@ -1,10 +1,10 @@
 
-import type { QuestionOption, Curse } from '@/lib/types';
+import type { QuestionOption } from '@/lib/types';
 import { MapPin, Target, GitCompareArrows, Camera, ScanLine, ShieldAlert, Citrus, Footprints, Car, Route, Bird, Home, ShieldCheck, Search, Eye, ScrollText, Trophy } from 'lucide-react';
 
 export const GAME_TITLE = "MTR Hide and Seek";
 
-export const MTR_MAP_PLACEHOLDER_URL = "https://placehold.co/800x600.png";
+export const MTR_MAP_PLACEHOLDER_URL = "https://www.mtr.com.hk/en/customer/images/services/MTR_routemap_510.jpg"; // Default to actual MTR map
 
 export const GAME_RULES = {
   introduction: "The team of Hiders that avoids capture for the longest time overall wins.",
@@ -89,16 +89,16 @@ export const QUESTION_OPTIONS: QuestionOption[] = [
   { id: 'q_scan', name: 'Scan', category: 'Scan', cost: 0, hiderCoinsEarned: 20, description: "Ask 'Are you in [specific region]?' (1 per 30 mins). Truthful response within 2 mins.", seekerPrompt: "e.g., Kowloon, Island Line, Southern District.", icon: ScanLine }
 ];
 
-export const CURSE_DICE_OPTIONS: Array<{ number: number; name: string; description: string; effect: string; icon: React.ElementType }> = [
+export const CURSE_DICE_OPTIONS: Array<{ number: number; name: string; description: string; effect: string; icon: React.ElementType; durationMinutes?: number }> = [
   { number: 1, name: "William Tell Curse", description: "Seekers must knock an apple off their partner's head from 3m.", effect: "Seekers must perform the William Tell task.", icon: ShieldAlert },
   { number: 2, name: "Curse of the Lemon Phylactery", description: "Seekers must find and affix a lemon. Lost lemon = +30 mins for hider.", effect: "Seekers must find and carry lemons.", icon: Citrus },
-  { number: 3, name: "Curse of the Gambler's Feet", description: "For 10 mins, seekers roll die for steps.", effect: "Seekers movement restricted by die rolls.", icon: Footprints },
+  { number: 3, name: "Curse of the Gambler's Feet", description: "For 10 mins, seekers roll die for steps.", effect: "Seekers movement restricted by die rolls.", icon: Footprints, durationMinutes: 10 },
   { number: 4, name: "Curse of the Luxury Car", description: "Hider photos car. Seekers must photo more expensive car.", effect: "Seekers must find and photograph a more expensive car.", icon: Car },
-  { number: 5, name: "Curse of the Right Turn", description: "For 15 mins, seekers only turn right. Dead end allows 180.", effect: "Seekers movement restricted to right turns.", icon: Route },
+  { number: 5, name: "Curse of the Right Turn", description: "For 15 mins, seekers only turn right. Dead end allows 180.", effect: "Seekers movement restricted to right turns.", icon: Route, durationMinutes: 15 },
   { number: 6, name: "Curse of the Zoologist", description: "Hider photos wild animal. Seekers must photo same category.", effect: "Seekers must find and photograph a similar wild animal.", icon: Bird }
 ];
 
-export const INITIAL_COINS_HIDER_START = 0; 
+export const INITIAL_COINS_HIDER_START = 0;
 export const HIDING_PHASE_DURATION_MINUTES = 60;
 export const SEEKING_PHASE_DURATION_MINUTES = 120;
 export const CHALLENGE_PENALTY_MINUTES = 15;
@@ -116,4 +116,3 @@ export const NAVIGATION_ITEMS = [
 
 export const MTR_LINES_EXAMPLE = ["Tsuen Wan Line", "Island Line", "Kwun Tong Line", "Tung Chung Line", "East Rail Line"];
 export const DISTRICTS_EXAMPLE = ["Central & Western", "Wan Chai", "Eastern", "Southern", "Yau Tsim Mong", "Sham Shui Po", "Kowloon City", "Wong Tai Sin", "Kwun Tong", "Kwai Tsing", "Tsuen Wan", "Tuen Mun", "Yuen Long", "North", "Tai Po", "Sha Tin", "Sai Kung", "Islands"];
-

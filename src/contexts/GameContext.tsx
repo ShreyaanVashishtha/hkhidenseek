@@ -2,7 +2,7 @@
 "use client";
 
 import type { GameState, Player, Team, GameRound, TeamRole, AskedQuestion, QuestionOption } from '@/lib/types';
-import { MTR_MAP_PLACEHOLDER_URL, INITIAL_COINS_HIDER_START, QUESTION_OPTIONS } from '@/lib/constants';
+import { MTR_MAP_PLACEHOLDER_URL, INITIAL_COINS_HIDER_START, QUESTION_OPTIONS, CURSE_DICE_OPTIONS, MAX_CURSES_PER_ROUND } from '@/lib/constants';
 import React, { createContext, useState, useCallback, ReactNode, useEffect } from 'react';
 import { toast } from '@/hooks/use-toast';
 
@@ -24,7 +24,8 @@ interface GameContextType extends GameState {
   isMobile: boolean;
   askQuestion: (question: AskedQuestion) => void;
   answerQuestion: (questionId: string, response: string | File) => void;
-  recordCurseUsed: (hiderTeamId: string) => void;
+  activateCurse: (hiderTeamId: string, rolledCurseNumber: number) => void;
+  clearActiveCurse: () => void;
 }
 
 const defaultGameState: GameState = {
@@ -63,7 +64,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       players: [],
       isHiding: false,
       isSeeking: false,
-      coins: 0, // Start with 0, hiders earn, seekers irrelevant
+      coins: 0,
       hidingTimeSeconds: 0,
       cursesUsed: 0,
     };
@@ -101,7 +102,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     setGameState(prev => ({
       ...prev,
       teams: prev.teams.map(team =>
-        team.id === teamId ? { ...team, isHiding, isSeeking, coins: isHiding ? INITIAL_COINS_HIDER_START : 0 } : team
+        team.id === teamId ? { ...team, isHiding, isSeeking, coins: isHiding ? (team.coins || INITIAL_COINS_HIDER_START) : 0 } : team
       ),
     }));
   }, []);
@@ -110,8 +111,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     setGameState(prev => {
       const teamsWithRoundResets = prev.teams.map(t => ({
         ...t,
-        cursesUsed: t.isHiding ? 0 : t.cursesUsed,
-        coins: t.isHiding ? (t.coins || INITIAL_COINS_HIDER_START) : 0, // Hiders keep coins or start fresh, seekers always 0
+        cursesUsed: t.isHiding ? 0 : t.cursesUsed, // Reset curses for new hider
+        coins: t.isSeeking ? 0 : (t.isHiding ? (t.coins || INITIAL_COINS_HIDER_START) : t.coins), // Seekers 0, hiders keep/start fresh
       }));
 
       const hidingTeamForRound = teamsWithRoundResets.find(t => t.isHiding);
@@ -121,6 +122,11 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         toast?.({ title: "Cannot Start Round", description: "A hiding team must be designated.", variant: "destructive" });
         return prev;
       }
+      if (seekingTeamsForRound.length === 0) {
+        toast?.({ title: "Cannot Start Round", description: "At least one seeking team must be designated.", variant: "destructive" });
+        return prev;
+      }
+
 
       const roundStartTime = new Date();
       const newRound: GameRound = {
@@ -131,12 +137,13 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         phaseStartTime: roundStartTime,
         status: 'hiding-phase',
         askedQuestions: [],
+        activeCurse: null,
       };
 
       return {
         ...prev,
         currentRound: newRound,
-        teams: teamsWithRoundResets, 
+        teams: teamsWithRoundResets,
       };
     });
   }, []);
@@ -151,7 +158,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         currentRound: {
           ...prev.currentRound,
           status: 'seeking-phase',
-          phaseStartTime: new Date(), 
+          phaseStartTime: new Date(),
         },
       };
     });
@@ -163,8 +170,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       const finishedRound: GameRound = { ...prev.currentRound, endTime: new Date(), status: 'completed' };
       
       const updatedTeams = prev.teams.map(team => {
-        if (team.id === finishedRound.hidingTeam?.id && finishedRound.phaseStartTime) {
-          const hideEndTime = finishedRound.endTime || new Date(); 
+        if (team.id === finishedRound.hidingTeam?.id && finishedRound.phaseStartTime && finishedRound.status === 'seeking-phase') { // only calculate if seeking phase started
+          const hideEndTime = finishedRound.endTime || new Date();
           const roundHidingDuration = Math.floor((hideEndTime.getTime() - new Date(finishedRound.phaseStartTime).getTime()) / 1000);
           if (roundHidingDuration > team.hidingTimeSeconds) {
             return { ...team, hidingTimeSeconds: roundHidingDuration };
@@ -177,7 +184,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         ...prev,
         currentRound: null,
         gameHistory: [...prev.gameHistory, finishedRound],
-        teams: updatedTeams, 
+        teams: updatedTeams,
       };
     });
   }, []);
@@ -204,8 +211,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
             return team;
         });
 
-        // Also update the team object within currentRound if it exists
-        let newCurrentRound = prev.currentRound;
+        let newCurrentRound = prev.currentRound ? { ...prev.currentRound } : null;
         if (newCurrentRound) {
             if (newCurrentRound.hidingTeam?.id === teamId) {
                 const currentHidingTeamCoins = newCurrentRound.hidingTeam.coins || 0;
@@ -214,8 +220,11 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
                     coins: operation === 'add' ? currentHidingTeamCoins + amount : Math.max(0, currentHidingTeamCoins - amount)
                 };
             }
+             // Seeking teams coins are not managed this way anymore, but keep structure if needed later
             newCurrentRound.seekingTeams = newCurrentRound.seekingTeams.map(st => {
                 if (st.id === teamId) {
+                    // This part is less relevant now that seekers have "unlimited" coins for questions
+                    // but if they had other coin mechanics, it would be here.
                     const currentSeekingTeamCoins = st.coins || 0;
                     return {
                         ...st,
@@ -241,7 +250,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
 
   const askQuestion = useCallback((question: AskedQuestion) => {
     setGameState(prev => {
-      if (!prev.currentRound) return prev;
+      if (!prev.currentRound || !prev.currentRound.hidingTeam) return prev;
       
       const questionOption = QUESTION_OPTIONS.find(opt => opt.id === question.questionOptionId);
       let coinsToAward = 0;
@@ -250,9 +259,9 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       }
 
       let updatedTeams = prev.teams;
-      let updatedHidingTeamInRound = prev.currentRound.hidingTeam;
+      let updatedHidingTeamInRound = { ...prev.currentRound.hidingTeam };
 
-      if (prev.currentRound.hidingTeam && coinsToAward > 0) {
+      if (coinsToAward > 0) {
         const hiderTeamId = prev.currentRound.hidingTeam.id;
         updatedTeams = prev.teams.map(team => {
           if (team.id === hiderTeamId) {
@@ -261,12 +270,11 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
           }
           return team;
         });
-        if (updatedHidingTeamInRound) {
-            updatedHidingTeamInRound = {
-                ...updatedHidingTeamInRound,
-                coins: (updatedHidingTeamInRound.coins || 0) + coinsToAward
-            };
-        }
+        
+        updatedHidingTeamInRound = {
+            ...updatedHidingTeamInRound,
+            coins: (updatedHidingTeamInRound.coins || 0) + coinsToAward
+        };
       }
       
       const updatedRound = {
@@ -298,8 +306,18 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     });
   }, []);
 
-  const recordCurseUsed = useCallback((hiderTeamId: string) => {
+  const activateCurse = useCallback((hiderTeamId: string, rolledCurseNumber: number) => {
     setGameState(prev => {
+      if (!prev.currentRound || !prev.currentRound.hidingTeam || prev.currentRound.hidingTeam.id !== hiderTeamId) {
+        toast({title: "Error", description: "Cannot activate curse. Hiding team mismatch or no active round.", variant: "destructive"})
+        return prev;
+      }
+      
+      if ((prev.currentRound.hidingTeam.cursesUsed || 0) >= MAX_CURSES_PER_ROUND) {
+        toast({title: "Max Curses", description: "Maximum curses already used for this round.", variant: "destructive"})
+        return prev;
+      }
+
       const newTeams = prev.teams.map(team => {
         if (team.id === hiderTeamId) {
           return { ...team, cursesUsed: (team.cursesUsed || 0) + 1 };
@@ -307,17 +325,35 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         return team;
       });
 
-      let newCurrentRound = prev.currentRound;
-      if (newCurrentRound && newCurrentRound.hidingTeam?.id === hiderTeamId) {
-        newCurrentRound.hidingTeam = {
-          ...newCurrentRound.hidingTeam,
-          cursesUsed: (newCurrentRound.hidingTeam.cursesUsed || 0) + 1
-        };
-      }
+      const newCurrentRound = {
+        ...prev.currentRound,
+        hidingTeam: {
+          ...prev.currentRound.hidingTeam,
+          cursesUsed: (prev.currentRound.hidingTeam.cursesUsed || 0) + 1,
+        },
+        activeCurse: {
+          curseId: rolledCurseNumber,
+          startTime: new Date(),
+        }
+      };
+      
       return {
         ...prev,
         teams: newTeams,
         currentRound: newCurrentRound,
+      };
+    });
+  }, []);
+
+  const clearActiveCurse = useCallback(() => {
+    setGameState(prev => {
+      if (!prev.currentRound) return prev;
+      return {
+        ...prev,
+        currentRound: {
+          ...prev.currentRound,
+          activeCurse: null,
+        },
       };
     });
   }, []);
@@ -342,7 +378,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       isMobile,
       askQuestion,
       answerQuestion,
-      recordCurseUsed,
+      activateCurse,
+      clearActiveCurse,
     }}>
       {children}
     </GameContext.Provider>

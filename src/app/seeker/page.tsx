@@ -1,8 +1,8 @@
 
 "use client";
 
-import React, { useState, useEffect } from 'react'; // React import for Image
-import Image from 'next/image'; // For displaying photo responses
+import React, { useState, useEffect } from 'react'; 
+import Image from 'next/image'; 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -10,12 +10,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useGameContext } from "@/hooks/useGameContext";
 import type { Challenge, AskedQuestion, QuestionOption as QuestionOptionType, Team } from "@/lib/types";
-import { QUESTION_OPTIONS, CHALLENGE_PENALTY_MINUTES, HIDING_PHASE_DURATION_MINUTES, SEEKING_PHASE_DURATION_MINUTES } from "@/lib/constants";
+import { QUESTION_OPTIONS, CURSE_DICE_OPTIONS, CHALLENGE_PENALTY_MINUTES, HIDING_PHASE_DURATION_MINUTES, SEEKING_PHASE_DURATION_MINUTES } from "@/lib/constants";
 import { PageHeader } from "@/components/PageHeader";
 import { TimerDisplay } from "@/components/game/TimerDisplay";
 import { VetoConsequenceModal } from "@/components/game/VetoConsequenceModal";
 import { useToast } from '@/hooks/use-toast';
-import { Search, ShieldQuestion, Send, ThumbsUp, ThumbsDown, ListChecks } from "lucide-react";
+import { Search, ShieldQuestion, Send, ThumbsUp, ThumbsDown, ListChecks, Zap } from "lucide-react"; // Added Zap for curse icon
 import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface PhotoResponseDisplayProps {
@@ -58,7 +58,7 @@ const PhotoResponseDisplay: React.FC<PhotoResponseDisplayProps> = ({ file }) => 
 
 
 export default function SeekerPage() {
-  const { teams, currentRound, startSeekingPhase, askQuestion } = useGameContext();
+  const { teams, currentRound, startSeekingPhase, askQuestion, clearActiveCurse } = useGameContext();
   const { toast } = useToast();
 
   const [myTeam, setMyTeam] = useState<Team | undefined>(undefined);
@@ -75,12 +75,10 @@ export default function SeekerPage() {
 
   useEffect(() => {
     if (currentRound && currentRound.seekingTeams.length > 0) {
-        // Attempt to find this user's specific seeking team if multiple seekers exist.
-        // This logic might need refinement based on how users are associated with teams.
-        // For now, assumes the first seeking team or any seeking team if single.
-        setMyTeam(teams.find(t => currentRound.seekingTeams.some(st => st.id === t.id) && t.isSeeking));
+        const userTeam = teams.find(t => currentRound.seekingTeams.some(st => st.id === t.id) && t.isSeeking);
+        setMyTeam(userTeam);
     } else if (teams.some(t => t.isSeeking)) {
-        setMyTeam(teams.find(t => t.isSeeking)); // Fallback if currentRound isn't fully populated yet
+        setMyTeam(teams.find(t => t.isSeeking)); 
     } else {
         setMyTeam(undefined);
     }
@@ -141,13 +139,16 @@ export default function SeekerPage() {
     toast({ title: "Question Asked!", description: `${selectedQuestionType.name} question sent.` });
     
     setQuestionText("");
+    // Keep selectedQuestionType for convenience if asking multiple similar questions
   };
   
   const gamePhase = currentRound?.status || 'pending';
   const isHidingPhase = gamePhase === 'hiding-phase';
   const isSeekingPhase = gamePhase === 'seeking-phase';
   const displayedAskedQuestions = currentRound?.askedQuestions || [];
-
+  const activeCurseDetails = currentRound?.activeCurse 
+    ? CURSE_DICE_OPTIONS.find(c => c.number === currentRound.activeCurse!.curseId)
+    : null;
 
   if (!myTeam && isSeekingPhase) {
     return (
@@ -196,7 +197,7 @@ export default function SeekerPage() {
         <TimerDisplay 
           title={timerTitle}
           durationMinutes={currentPhaseDuration}
-          phaseStartTime={currentRound?.phaseStartTime}
+          phaseStartTime={currentRound?.phaseStartTime ? new Date(currentRound.phaseStartTime) : undefined}
           isActive={isHidingPhase || isSeekingPhase}
           onTimerEnd={isHidingPhase ? () => {
             toast({ title: "Hiding Phase Over!", description: "Seeking phase has begun!" });
@@ -233,6 +234,36 @@ export default function SeekerPage() {
 
       {isSeekingPhase && (
         <>
+          {activeCurseDetails && currentRound?.activeCurse && (
+            <Card className="border-destructive bg-destructive/10">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-destructive">
+                  <activeCurseDetails.icon className="h-6 w-6" />
+                  Curse Active: {activeCurseDetails.name}
+                </CardTitle>
+                <CardDescription className="text-destructive/90">
+                  {activeCurseDetails.description} <br />
+                  <strong>Effect on Seekers:</strong> {activeCurseDetails.effect}
+                </CardDescription>
+              </CardHeader>
+              {activeCurseDetails.durationMinutes && currentRound.activeCurse.startTime && (
+                <CardContent>
+                  <TimerDisplay
+                    title="Curse Time Remaining"
+                    durationMinutes={activeCurseDetails.durationMinutes}
+                    phaseStartTime={new Date(currentRound.activeCurse.startTime)}
+                    isActive={true} // Curse timer is active if displayed
+                    onTimerEnd={() => {
+                      toast({ title: "Curse Expired", description: `${activeCurseDetails.name} is no longer active.` });
+                      clearActiveCurse();
+                    }}
+                    className="text-sm"
+                  />
+                </CardContent>
+              )}
+            </Card>
+          )}
+
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2"><ListChecks /> Challenges</CardTitle>
@@ -273,6 +304,7 @@ export default function SeekerPage() {
                 <Select 
                   onValueChange={(value) => setSelectedQuestionType(QUESTION_OPTIONS.find(q => q.id === value))}
                   disabled={isPenaltyActive}
+                  value={selectedQuestionType?.id}
                 >
                   <SelectTrigger id="question-type"><SelectValue placeholder="Select question type" /></SelectTrigger>
                   <SelectContent>
@@ -316,12 +348,12 @@ export default function SeekerPage() {
                   {displayedAskedQuestions.map(q => (
                     <li key={q.id} className="p-3 border rounded-md bg-card/80">
                       <p className="font-semibold text-primary">{q.category}: <span className="text-foreground">{q.text}</span></p>
-                      <p className="text-xs text-muted-foreground">Asked: {new Date(q.timestamp).toLocaleTimeString()}</p>
+                      <p className="text-xs text-muted-foreground">Asked by {teams.find(t => t.id === q.askingTeamId)?.name || 'Unknown Seeker'} at: {new Date(q.timestamp).toLocaleTimeString()}</p>
                       {q.response && (
                         <div className="mt-1 text-sm text-accent-foreground bg-accent/20 p-2 rounded-md">
-                          Hider: 
+                          Hider Response: 
                           {typeof q.response === 'string' 
-                            ? q.response 
+                            ? <span className="ml-1">{q.response}</span>
                             : q.response instanceof File 
                               ? <PhotoResponseDisplay file={q.response} /> 
                               : "Invalid response format"}

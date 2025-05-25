@@ -10,8 +10,8 @@ export interface Team {
   players: Player[];
   isHiding: boolean;
   isSeeking: boolean;
-  coins: number; 
-  hidingTimeSeconds: number; 
+  coins: number;
+  hidingTimeSeconds: number;
   cursesUsed: number;
 }
 
@@ -24,8 +24,8 @@ export interface QuestionOption {
   cost: number; // Cost for seeker (will be 0 as they have unlimited)
   hiderCoinsEarned: number; // Coins hider earns for this question
   description: string;
-  seekerPrompt?: string; 
-  disabledCondition?: (gameState: GameState, team: Team) => boolean; 
+  seekerPrompt?: string;
+  disabledCondition?: (gameState: GameState, team: Team) => boolean;
   icon?: React.ElementType;
 }
 
@@ -33,9 +33,9 @@ export interface AskedQuestion {
   id: string;
   questionOptionId: string;
   category: QuestionCategory;
-  text: string; 
-  response?: string | File; 
-  isTruthful?: boolean; 
+  text: string;
+  response?: string | File;
+  isTruthful?: boolean;
   timestamp: Date;
   askingTeamId: string;
 }
@@ -52,7 +52,7 @@ export interface Curse {
   id: string;
   name: string;
   description: string;
-  effect: (gameState: GameState, seekingTeam: Team) => void; 
+  effect: (gameState: GameState, seekingTeam: Team) => void;
   icon?: React.ElementType;
 }
 
@@ -60,20 +60,23 @@ export interface GameRound {
   roundNumber: number;
   hidingTeam: Team | null;
   seekingTeams: Team[];
-  startTime?: Date; 
-  phaseStartTime?: Date; 
+  startTime?: Date;
+  phaseStartTime?: Date;
   endTime?: Date;
   status: "pending" | "hiding-phase" | "seeking-phase" | "completed";
-  askedQuestions: AskedQuestion[]; 
+  askedQuestions: AskedQuestion[];
+  activeCurse: {
+    curseId: number; // The number rolled, links to CURSE_DICE_OPTIONS
+    startTime: Date;
+  } | null;
 }
 
 export interface GameState {
   players: Player[];
   teams: Team[];
   currentRound: GameRound | null;
-  gameHistory: GameRound[]; 
-  mtrMapUrl?: string; 
+  gameHistory: GameRound[];
+  mtrMapUrl?: string;
 }
 
 export type TeamRole = "hider" | "seeker" | "admin" | "spectator";
-

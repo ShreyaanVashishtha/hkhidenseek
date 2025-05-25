@@ -19,7 +19,7 @@ import { Eye, ShieldQuestion, Upload, Send, Dice5, Zap, Coins } from "lucide-rea
 import { ScrollArea } from '@/components/ui/scroll-area';
 
 export default function HiderPage() {
-  const { teams, currentRound, updateTeamCoins, startSeekingPhase, answerQuestion, recordCurseUsed } = useGameContext();
+  const { teams, currentRound, updateTeamCoins, startSeekingPhase, answerQuestion, activateCurse } = useGameContext();
   const { toast } = useToast();
 
   const [myTeam, setMyTeam] = useState<Team | undefined>(undefined); 
@@ -29,17 +29,35 @@ export default function HiderPage() {
   const [responsePhoto, setResponsePhoto] = useState<File | null>(null);
   const [yesNoResponse, setYesNoResponse] = useState<"yes" | "no" | undefined>(undefined);
 
-  const [rolledCurse, setRolledCurse] = useState<{ number: number; name: string; description: string; effect: string; icon: React.ElementType } | null>(null);
+  const [rolledCurse, setRolledCurse] = useState<{ number: number; name: string; description: string; effect: string; icon: React.ElementType; durationMinutes?: number; } | null>(null);
   const [hasPendingRoll, setHasPendingRoll] = useState(false);
 
   useEffect(() => {
     if (currentRound?.hidingTeam) {
       const updatedHidingTeamFromContext = teams.find(t => t.id === currentRound.hidingTeam!.id);
       setMyTeam(updatedHidingTeamFromContext);
+
+      // Sync local rolledCurse display with global activeCurse state
+      if (currentRound.activeCurse && updatedHidingTeamFromContext?.id === currentRound.hidingTeam.id) {
+        const activeCurseDetails = CURSE_DICE_OPTIONS.find(c => c.number === currentRound.activeCurse!.curseId);
+        if (activeCurseDetails) {
+          setRolledCurse(activeCurseDetails);
+          // If a curse is globally active, it means it was rolled, so no pending roll locally.
+          setHasPendingRoll(false); 
+        }
+      } else if (!currentRound.activeCurse && !hasPendingRoll) {
+        // If no global curse and no local pending roll, clear local display
+        setRolledCurse(null);
+      }
+
     } else {
        setMyTeam(teams.find(t => t.isHiding));
+       // If no current round or hiding team, ensure local curse display is also cleared
+       if (!hasPendingRoll) {
+         setRolledCurse(null);
+       }
     }
-  }, [teams, currentRound]);
+  }, [teams, currentRound, hasPendingRoll]); // Added hasPendingRoll to ensure it doesn't clear if a buy just happened
 
   const handleSendResponse = () => {
     if (!selectedQuestionToAnswer || !myTeam) return;
@@ -84,13 +102,13 @@ export default function HiderPage() {
       toast({ title: "Max Curses Used", description: `You have already used curse dice ${MAX_CURSES_PER_ROUND} times this round.`, variant: "destructive" });
       return;
     }
-    if (hasPendingRoll) {
-      toast({ title: "Roll Pending", description: "You already have a dice roll pending. Please roll it first.", variant: "destructive" });
+    if (hasPendingRoll || currentRound?.activeCurse) { // Also check global active curse
+      toast({ title: "Roll Pending or Curse Active", description: "A dice roll is pending or a curse is already active globally.", variant: "destructive" });
       return;
     }
     updateTeamCoins(myTeam.id, CURSE_DICE_COST, 'subtract');
     setHasPendingRoll(true);
-    setRolledCurse(null); // Clear previous roll display
+    setRolledCurse(null); 
     toast({ title: "Curse Dice Purchased!", description: `-${CURSE_DICE_COST} coins. Roll the dice!` });
   };
 
@@ -103,13 +121,17 @@ export default function HiderPage() {
       toast({ title: "Max Curses Used", description: `Cannot roll, max curses for this round reached.`, variant: "destructive" });
       return;
     }
+    if (!currentRound || currentRound.activeCurse) {
+         toast({ title: "Cannot Roll", description: "A curse is already active globally for this round.", variant: "destructive" });
+        return;
+    }
 
     const roll = Math.floor(Math.random() * 6) + 1 as 1 | 2 | 3 | 4 | 5 | 6;
     const curse = CURSE_DICE_OPTIONS.find(c => c.number === roll);
     if (curse) {
-        setRolledCurse(curse);
-        recordCurseUsed(myTeam.id); // Record that a curse has been officially used
-        setHasPendingRoll(false); // Consume the pending roll
+        setRolledCurse(curse); // Update local display immediately
+        activateCurse(myTeam.id, curse.number); // This updates global state and cursesUsed
+        setHasPendingRoll(false); 
         toast({ title: "Curse Rolled!", description: `Curse of ${curse.name} activated!` });
     }
   };
@@ -178,7 +200,7 @@ export default function HiderPage() {
         <TimerDisplay 
           title={timerTitle}
           durationMinutes={currentPhaseDuration}
-          phaseStartTime={currentRound?.phaseStartTime}
+          phaseStartTime={currentRound?.phaseStartTime ? new Date(currentRound.phaseStartTime) : undefined}
           isActive={isHidingPhase || isSeekingPhase}
           onTimerEnd={isHidingPhase ? () => {
             toast({ title: "Hiding Phase Over!", description: "Seeking phase has begun!" });
@@ -288,14 +310,14 @@ export default function HiderPage() {
             <CardContent className="flex flex-wrap gap-4 items-center">
                 <Button 
                     onClick={handleBuyCurseDice} 
-                    disabled={!myTeam || myTeam.coins < CURSE_DICE_COST || (myTeam.cursesUsed || 0) >= MAX_CURSES_PER_ROUND || hasPendingRoll}
+                    disabled={!myTeam || myTeam.coins < CURSE_DICE_COST || (myTeam.cursesUsed || 0) >= MAX_CURSES_PER_ROUND || hasPendingRoll || !!currentRound?.activeCurse}
                     className="flex items-center gap-2"
                 >
                     <Dice5/> Buy Curse Dice ({CURSE_DICE_COST} coins)
                 </Button>
                 <Button 
                     onClick={handleRollCurseDice} 
-                    disabled={!myTeam || !hasPendingRoll || (myTeam.cursesUsed || 0) >= MAX_CURSES_PER_ROUND || rolledCurse !== null || !currentRound?.seekingTeams.length}
+                    disabled={!myTeam || !hasPendingRoll || (myTeam.cursesUsed || 0) >= MAX_CURSES_PER_ROUND || !!rolledCurse || !currentRound?.seekingTeams.length || !!currentRound?.activeCurse}
                     variant="outline"
                     className="flex items-center gap-2"
                 >
@@ -311,6 +333,19 @@ export default function HiderPage() {
                         </h4>
                         <p className="text-sm">{rolledCurse.description}</p>
                         <p className="text-xs text-muted-foreground mt-1"><strong>Effect on Seekers:</strong> {rolledCurse.effect}</p>
+                        {rolledCurse.durationMinutes && currentRound?.activeCurse?.startTime && currentRound.activeCurse.curseId === rolledCurse.number && (
+                           <div className="mt-2">
+                             <TimerDisplay
+                                title="Curse Active For"
+                                durationMinutes={rolledCurse.durationMinutes}
+                                phaseStartTime={new Date(currentRound.activeCurse.startTime)}
+                                isActive={!!currentRound.activeCurse}
+                                // Hider view doesn't clear the curse, seeker view does
+                                onTimerEnd={() => {}} 
+                                className="text-sm"
+                             />
+                           </div>
+                        )}
                     </div>
                 </CardFooter>
             )}
