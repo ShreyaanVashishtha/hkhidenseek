@@ -1,4 +1,3 @@
-
 "use client";
 
 import type { GameState, Player, Team, GameRound, TeamRole, AskedQuestion, QuestionOption, ActiveCurseInfo, CurseRule } from '@/lib/types';
@@ -6,6 +5,7 @@ import { MTR_MAP_PLACEHOLDER_URL, INITIAL_COINS_HIDER_START, QUESTION_OPTIONS, C
 import React, { createContext, useState, useCallback, ReactNode, useEffect } from 'react';
 import { toast } from '@/hooks/use-toast';
 
+const GAME_STATE_LOCAL_STORAGE_KEY = 'hideAndSeekGameState_v2';
 
 interface GameContextType extends GameState {
   addPlayer: (name: string) => Player;
@@ -19,8 +19,8 @@ interface GameContextType extends GameState {
   updateHidingTime: (teamId: string, timeSeconds: number) => void;
   updateTeamCoins: (teamId: string, amount: number, operation?: 'add' | 'subtract') => void;
   setMtrMapUrl: (url: string) => void;
-  setCurrentUserRole: (role: TeamRole | null) => void; 
-  currentUserRole: TeamRole | null; 
+  setCurrentUserRole: (role: TeamRole | null) => void;
+  currentUserRole: TeamRole | null;
   isMobile: boolean;
   askQuestion: (question: AskedQuestion) => void;
   answerQuestion: (questionId: string, response: string | File) => void;
@@ -30,7 +30,6 @@ interface GameContextType extends GameState {
   seekerCompletesCurseAction: (photoFile?: File) => void;
   hiderAcknowledgesSeekerPhoto: () => void;
 
-  // PIN and Auth functions
   setAdminPin: (pin: string) => void;
   setHiderPin: (pin: string) => void;
   setSeekerPin: (pin: string) => void;
@@ -56,10 +55,77 @@ const defaultGameState: GameState = {
   isSeekerAuthenticated: false,
 };
 
+// Helper to deserialize dates from JSON
+const deserializeDates = (obj: any): any => {
+  if (obj === null || obj === undefined || typeof obj !== 'object') {
+    return obj;
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map(deserializeDates);
+  }
+
+  const newObj: any = {};
+  for (const key in obj) {
+    if (Object.prototype.hasOwnProperty.call(obj, key)) {
+      const value = obj[key];
+      if (typeof value === 'string') {
+        // Attempt to parse common date fields
+        if (key === 'timestamp' || key === 'startTime' || key === 'phaseStartTime' || key === 'endTime') {
+          const date = new Date(value);
+          if (!isNaN(date.getTime())) {
+            newObj[key] = date;
+            continue;
+          }
+        }
+      }
+      // For File objects that were stringified, they might become empty objects or similar.
+      // We explicitly nullify them here during deserialization if they were meant to be files.
+      if ((key === 'response' && typeof value === 'object' && !(value instanceof Date)) || 
+          (key === 'seekerSubmittedPhoto' && typeof value === 'object' && !(value instanceof Date))) {
+            newObj[key] = null; // Ensure File objects are nulled if not properly handled
+      } else {
+        newObj[key] = deserializeDates(value);
+      }
+    }
+  }
+  return newObj;
+};
+
+
+const loadStateFromLocalStorage = (): GameState => {
+  try {
+    const serializedState = localStorage.getItem(GAME_STATE_LOCAL_STORAGE_KEY);
+    if (serializedState === null) {
+      // If no state in localStorage, save the default state (which includes the default admin PIN)
+      localStorage.setItem(GAME_STATE_LOCAL_STORAGE_KEY, JSON.stringify(defaultGameState));
+      return defaultGameState;
+    }
+    const storedState = JSON.parse(serializedState);
+    const deserializedState = deserializeDates(storedState);
+    
+    // Ensure essential default structure if something is missing from stored state
+    // This also handles first load by ensuring adminPin default if not present
+    return {
+      ...defaultGameState, // provides defaults for any missing top-level keys
+      ...deserializedState,
+      adminPin: deserializedState.adminPin !== undefined ? deserializedState.adminPin : defaultGameState.adminPin, // Prioritize stored, then default for adminPin
+      // Ensure auth flags are booleans
+      isAdminAuthenticated: !!deserializedState.isAdminAuthenticated,
+      isHiderAuthenticated: !!deserializedState.isHiderAuthenticated,
+      isSeekerAuthenticated: !!deserializedState.isSeekerAuthenticated,
+    };
+  } catch (error) {
+    console.error("Could not load game state from localStorage:", error);
+    return defaultGameState; // Fallback to default if error
+  }
+};
+
+
 export const GameContext = createContext<GameContextType | undefined>(undefined);
 
 export const GameProvider = ({ children }: { children: ReactNode }) => {
-  const [gameState, setGameState] = useState<GameState>(defaultGameState);
+  const [gameState, setGameState] = useState<GameState>(loadStateFromLocalStorage);
   const [currentUserRole, setCurrentUserRole] = useState<TeamRole | null>(null);
   const [isMobile, setIsMobile] = useState(false);
 
@@ -71,40 +137,19 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   useEffect(() => {
-    const adminPinStorageKey = 'adminPin_mtrGame';
-    const loadedAdminPinFromStorage = localStorage.getItem(adminPinStorageKey);
-    let finalAdminPinToSet: string | undefined = gameState.adminPin; // Starts with default from state ("113221")
-
-    if (loadedAdminPinFromStorage === null) {
-      // No PIN in storage, means it's the first load or storage was cleared.
-      // The default "113221" from gameState.adminPin is correct.
-      // We should write this default to localStorage so it persists.
-      localStorage.setItem(adminPinStorageKey, "113221");
-      finalAdminPinToSet = "113221";
-    } else if (loadedAdminPinFromStorage === "") {
-      // Admin has explicitly cleared the PIN.
-      finalAdminPinToSet = undefined;
-    } else {
-      // A specific PIN is in localStorage.
-      finalAdminPinToSet = loadedAdminPinFromStorage;
+    try {
+      // Prepare state for serialization: nullify File objects
+      const stateToSave = JSON.parse(JSON.stringify(gameState, (key, value) => {
+        if (value instanceof File) {
+          return null; // Or some placeholder if you need to identify it later
+        }
+        return value;
+      }));
+      localStorage.setItem(GAME_STATE_LOCAL_STORAGE_KEY, JSON.stringify(stateToSave));
+    } catch (error) {
+      console.error("Could not save game state to localStorage:", error);
     }
-
-    const loadedHiderPin = localStorage.getItem('hiderPin_mtrGame');
-    const loadedSeekerPin = localStorage.getItem('seekerPin_mtrGame');
-    const loadedIsAdminAuthed = localStorage.getItem('isAdminAuthenticated_mtrGame') === 'true';
-    const loadedIsHiderAuthed = localStorage.getItem('isHiderAuthenticated_mtrGame') === 'true';
-    const loadedIsSeekerAuthed = localStorage.getItem('isSeekerAuthenticated_mtrGame') === 'true';
-
-    setGameState(prev => ({
-      ...prev,
-      adminPin: finalAdminPinToSet,
-      hiderPin: loadedHiderPin === "" ? undefined : loadedHiderPin,
-      seekerPin: loadedSeekerPin === "" ? undefined : loadedSeekerPin,
-      isAdminAuthenticated: loadedIsAdminAuthed,
-      isHiderAuthenticated: loadedIsHiderAuthed,
-      isSeekerAuthenticated: loadedIsSeekerAuthed,
-    }));
-  }, []); // Runs once on mount
+  }, [gameState]);
 
 
   const addPlayer = useCallback((name: string): Player => {
@@ -157,19 +202,35 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   const updateTeamRole = useCallback((teamId: string, isHiding: boolean, isSeeking: boolean) => {
     setGameState(prev => ({
       ...prev,
-      teams: prev.teams.map(team =>
-        team.id === teamId ? { ...team, isHiding, isSeeking, coins: isHiding ? (team.coins || INITIAL_COINS_HIDER_START) : (isSeeking ? 0 : team.coins), cursesUsed: isHiding ? 0 : team.cursesUsed } : team
-      ),
+      teams: prev.teams.map(team => {
+        if (team.id === teamId) {
+          const newRoleTeam = { ...team, isHiding, isSeeking };
+          if (isHiding) {
+            newRoleTeam.coins = team.coins === 0 && INITIAL_COINS_HIDER_START === 0 ? 0 : (team.coins || INITIAL_COINS_HIDER_START); // Respect existing coins if not 0
+            newRoleTeam.cursesUsed = 0;
+          } else if (isSeeking) {
+            // Seeker coins are effectively unlimited and not tracked this way.
+            // Their actual "coin" count is not relevant for actions.
+          }
+          return newRoleTeam;
+        }
+        return team;
+      }),
     }));
   }, []);
 
   const startNewRound = useCallback(() => {
     setGameState(prev => {
-      const teamsWithRoundResets = prev.teams.map(t => ({
-        ...t,
-        cursesUsed: t.isHiding ? 0 : t.cursesUsed, 
-        coins: t.isSeeking ? 0 : (t.isHiding ? (t.coins || INITIAL_COINS_HIDER_START) : t.coins), 
-      }));
+      const teamsWithRoundResets = prev.teams.map(t => {
+        const updatedTeam = { ...t };
+        if (t.isHiding) {
+          updatedTeam.cursesUsed = 0;
+          // Hider coins carry over or start with initial if not set
+          updatedTeam.coins = t.coins === 0 && INITIAL_COINS_HIDER_START === 0 ? 0 : (t.coins || INITIAL_COINS_HIDER_START);
+        }
+        // Seeker coins are not explicitly managed here as they are "unlimited" for actions.
+        return updatedTeam;
+      });
 
       const hidingTeamForRound = teamsWithRoundResets.find(t => t.isHiding);
       const seekingTeamsForRound = teamsWithRoundResets.filter(t => t.isSeeking);
@@ -186,8 +247,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       const roundStartTime = new Date();
       const newRound: GameRound = {
         roundNumber: (prev.currentRound?.roundNumber || 0) + 1,
-        hidingTeam: hidingTeamForRound,
-        seekingTeams: seekingTeamsForRound || [],
+        hidingTeam: { ...hidingTeamForRound }, // Ensure a copy
+        seekingTeams: seekingTeamsForRound.map(st => ({ ...st })) || [], // Ensure copies
         startTime: roundStartTime,
         phaseStartTime: roundStartTime,
         status: 'hiding-phase',
@@ -225,7 +286,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       const finishedRound: GameRound = { ...prev.currentRound, endTime: new Date(), status: 'completed' };
       
       const updatedTeams = prev.teams.map(team => {
-        if (team.id === finishedRound.hidingTeam?.id && finishedRound.phaseStartTime && prev.currentRound?.status === 'seeking-phase') { 
+        if (team.id === finishedRound.hidingTeam?.id && finishedRound.phaseStartTime && prev.currentRound?.status === 'seeking-phase') {
           const hideEndTime = finishedRound.endTime || new Date();
           const roundHidingDuration = Math.floor((hideEndTime.getTime() - new Date(finishedRound.phaseStartTime).getTime()) / 1000);
           if (roundHidingDuration > team.hidingTimeSeconds) {
@@ -267,15 +328,14 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         });
 
         let newCurrentRound = prev.currentRound ? { ...prev.currentRound } : null;
-        if (newCurrentRound) {
-            if (newCurrentRound.hidingTeam?.id === teamId) {
-                const currentHidingTeamCoins = newCurrentRound.hidingTeam.coins || 0;
-                newCurrentRound.hidingTeam = {
-                    ...newCurrentRound.hidingTeam,
-                    coins: operation === 'add' ? currentHidingTeamCoins + amount : Math.max(0, currentHidingTeamCoins - amount)
-                };
-            }
+        if (newCurrentRound && newCurrentRound.hidingTeam?.id === teamId) {
+            const currentHidingTeamCoins = newCurrentRound.hidingTeam.coins || 0;
+            newCurrentRound.hidingTeam = {
+                ...newCurrentRound.hidingTeam,
+                coins: operation === 'add' ? currentHidingTeamCoins + amount : Math.max(0, currentHidingTeamCoins - amount)
+            };
         }
+        // No explicit coin management for seekingTeams in currentRound as their coins are "unlimited" for actions.
 
         return {
             ...prev,
@@ -364,7 +424,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         cursesUsed: (prev.currentRound.hidingTeam.cursesUsed || 0) + 1,
       } : null;
 
-      if (!newCurrentRoundHidingTeam) return prev; 
+      if (!newCurrentRoundHidingTeam) return prev;
 
       const newCurrentRound = {
         ...prev.currentRound,
@@ -388,7 +448,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       const activeCurseInfo: ActiveCurseInfo = {
         curseId: rolledCurseNumber,
         startTime: new Date(),
-        resolutionStatus: 'pending_seeker_action', 
+        resolutionStatus: 'pending_seeker_action',
       };
       if (hiderInputText) {
         activeCurseInfo.hiderInputText = hiderInputText;
@@ -429,24 +489,30 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       if (!curseDetails) return prev;
 
       if (curseDetails.requiresSeekerAction === 'photo' && photoFile) {
+        // Note: photoFile itself won't be persisted in localStorage through simple JSON.stringify
+        // It's available for immediate UI use, then effectively "lost" on reload from this state.
         return {
           ...prev,
           currentRound: {
             ...prev.currentRound,
             activeCurse: {
               ...prev.currentRound.activeCurse,
-              seekerSubmittedPhoto: photoFile,
+              seekerSubmittedPhoto: photoFile, // Will be nullified on save to localStorage
               resolutionStatus: 'pending_hider_acknowledgement',
             },
           },
         };
       } else if (curseDetails.requiresSeekerAction === 'confirmation') {
-         // For confirmation curses, we'll call clearActiveCurse directly which handles the toast.
-         // No state change here, as clearActiveCurse will trigger re-render.
+         // For confirmation curses, clearActiveCurse will be called separately by the component.
+         // For now, we simply update the status to resolved.
+         // Or, we could directly call logic that would lead to clearActiveCurse.
+         // Let's assume for now the component handles calling clearActiveCurse after this.
+         // This function is more about updating state *before* clearing.
+         // So, we can let the component call clearActiveCurse.
       }
-      return prev; 
+      return prev;
     });
-    // If it was a confirmation curse, clear it.
+     // Call clearActiveCurse if it's a confirmation type, as it resolves immediately by seeker.
     if (gameState.currentRound?.activeCurse) {
         const curseDetails = CURSE_DICE_OPTIONS.find(c => c.number === gameState.currentRound!.activeCurse!.curseId);
         if (curseDetails && curseDetails.requiresSeekerAction === 'confirmation') {
@@ -461,56 +527,51 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         toast({ title: "Error", description: "No seeker photo to acknowledge or no active curse.", variant: "destructive" });
         return prev;
       }
-      return prev; 
+      // No specific state change here other than what clearActiveCurse will do.
+      return prev;
     });
-    clearActiveCurse();
-  }, [clearActiveCurse]); 
+    clearActiveCurse(); // This will set activeCurse to null and trigger re-renders.
+  }, [clearActiveCurse]);
 
   // PIN and Auth Logic
   const setAdminPin = useCallback((pin: string) => {
-    setGameState(prev => ({ ...prev, adminPin: pin === "" ? undefined : pin, isAdminAuthenticated: pin === "" ? false : prev.isAdminAuthenticated })); // Also de-auth if PIN cleared
-    localStorage.setItem('adminPin_mtrGame', pin); 
-    if(pin === "") localStorage.removeItem('isAdminAuthenticated_mtrGame');
-    toast({ title: "Admin PIN Updated", description: `Admin access PIN has been ${pin === "" ? "cleared (access revoked)" : "set"}.` });
+    const newPin = pin === "" ? undefined : pin;
+    setGameState(prev => ({ ...prev, adminPin: newPin, isAdminAuthenticated: newPin === undefined ? false : prev.isAdminAuthenticated }));
+    toast({ title: "Admin PIN Updated", description: `Admin access PIN has been ${newPin === undefined ? "cleared (access possibly revoked if default doesn't apply)" : "set"}.` });
   }, []);
 
   const setHiderPin = useCallback((pin: string) => {
-    setGameState(prev => ({ ...prev, hiderPin: pin === "" ? undefined : pin, isHiderAuthenticated: pin === "" ? false : prev.isHiderAuthenticated }));
-    localStorage.setItem('hiderPin_mtrGame', pin);
-    if(pin === "") localStorage.removeItem('isHiderAuthenticated_mtrGame');
-    toast({ title: "Hider PIN Updated", description: `Hider panel PIN has been ${pin === "" ? "cleared (access revoked)" : "set"}.` });
+    const newPin = pin === "" ? undefined : pin;
+    setGameState(prev => ({ ...prev, hiderPin: newPin, isHiderAuthenticated: newPin === undefined ? false : prev.isHiderAuthenticated }));
+    toast({ title: "Hider PIN Updated", description: `Hider panel PIN has been ${newPin === undefined ? "cleared (access revoked)" : "set"}.` });
   }, []);
 
   const setSeekerPin = useCallback((pin: string) => {
-    setGameState(prev => ({ ...prev, seekerPin: pin === "" ? undefined : pin, isSeekerAuthenticated: pin === "" ? false : prev.isSeekerAuthenticated }));
-    localStorage.setItem('seekerPin_mtrGame', pin);
-    if(pin === "") localStorage.removeItem('isSeekerAuthenticated_mtrGame');
-    toast({ title: "Seeker PIN Updated", description: `Seeker panel PIN has been ${pin === "" ? "cleared (access revoked)" : "set"}.` });
+    const newPin = pin === "" ? undefined : pin;
+    setGameState(prev => ({ ...prev, seekerPin: newPin, isSeekerAuthenticated: newPin === undefined ? false : prev.isSeekerAuthenticated }));
+    toast({ title: "Seeker PIN Updated", description: `Seeker panel PIN has been ${newPin === undefined ? "cleared (access revoked)" : "set"}.` });
   }, []);
 
   const authenticateAdmin = useCallback((enteredPin: string): boolean => {
-    // Use gameState.adminPin which reflects the current default or admin-set value
-    if (gameState.adminPin === enteredPin) {
+    const effectiveAdminPin = gameState.adminPin ?? defaultGameState.adminPin; // Use default if current is undefined
+    if (effectiveAdminPin === enteredPin) {
       setGameState(prev => ({ ...prev, isAdminAuthenticated: true }));
-      localStorage.setItem('isAdminAuthenticated_mtrGame', 'true');
       return true;
     }
     return false;
   }, [gameState.adminPin]);
 
   const authenticateHider = useCallback((enteredPin: string): boolean => {
-    if (gameState.hiderPin === enteredPin) {
+    if (gameState.hiderPin === enteredPin) { // Hider/Seeker PINs must be explicitly set to be active
       setGameState(prev => ({ ...prev, isHiderAuthenticated: true }));
-      localStorage.setItem('isHiderAuthenticated_mtrGame', 'true');
       return true;
     }
     return false;
   }, [gameState.hiderPin]);
 
   const authenticateSeeker = useCallback((enteredPin: string): boolean => {
-    if (gameState.seekerPin === enteredPin) {
+    if (gameState.seekerPin === enteredPin) { // Hider/Seeker PINs must be explicitly set to be active
       setGameState(prev => ({ ...prev, isSeekerAuthenticated: true }));
-      localStorage.setItem('isSeekerAuthenticated_mtrGame', 'true');
       return true;
     }
     return false;
@@ -518,19 +579,16 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
 
   const logoutAdmin = useCallback(() => {
     setGameState(prev => ({ ...prev, isAdminAuthenticated: false }));
-    localStorage.removeItem('isAdminAuthenticated_mtrGame');
     toast({ title: "Admin Logged Out", description: "Admin panel access has been revoked for this session." });
   }, []);
-  
+
   const logoutHider = useCallback(() => {
     setGameState(prev => ({ ...prev, isHiderAuthenticated: false }));
-    localStorage.removeItem('isHiderAuthenticated_mtrGame');
     toast({ title: "Hider Logged Out", description: "Hider panel access has been revoked for this session." });
   }, []);
 
   const logoutSeeker = useCallback(() => {
     setGameState(prev => ({ ...prev, isSeekerAuthenticated: false }));
-    localStorage.removeItem('isSeekerAuthenticated_mtrGame');
     toast({ title: "Seeker Logged Out", description: "Seeker panel access has been revoked for this session." });
   }, []);
 
@@ -574,3 +632,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   );
 };
 
+// Note: For PinProtectPage, if a PIN (e.g. adminPin) is undefined in gameState,
+// it means no PIN is set for that role, and access should be granted.
+// The default adminPin "113221" will be active on first load if no saved state.
+// If an admin clears their PIN, gameState.adminPin becomes undefined.
