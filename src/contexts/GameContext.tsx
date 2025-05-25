@@ -2,10 +2,8 @@
 "use client";
 
 import type { GameState, Player, Team, GameRound, TeamRole } from '@/lib/types';
-import { MTR_MAP_PLACEHOLDER_URL } from '@/lib/constants';
+import { MTR_MAP_PLACEHOLDER_URL, INITIAL_COINS } from '@/lib/constants'; // Assuming INITIAL_COINS might be for hiders
 import React, { createContext, useState, useCallback, ReactNode, useEffect } from 'react';
-// Assuming useToast is available and works correctly for client-side feedback
-// If not, this import might need adjustment or the toast call removed/replaced.
 import { toast } from '@/hooks/use-toast';
 
 
@@ -19,7 +17,7 @@ interface GameContextType extends GameState {
   startSeekingPhase: () => void;
   endCurrentRound: () => void;
   updateHidingTime: (teamId: string, timeSeconds: number) => void;
-  updateTeamCoins: (teamId: string, amount: number, operation?: 'add' | 'subtract') => void;
+  updateTeamCoins: (teamId: string, amount: number, operation?: 'add' | 'subtract') => void; // Still needed for hiders
   setMtrMapUrl: (url: string) => void;
   setCurrentUserRole: (role: TeamRole | null) => void;
   currentUserRole: TeamRole | null;
@@ -62,7 +60,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       players: [],
       isHiding: false,
       isSeeking: false,
-      coins: 0,
+      coins: INITIAL_COINS, // Hiders might start with some coins or earn them in other ways
       hidingTimeSeconds: 0,
       cursesUsed: 0,
     };
@@ -74,12 +72,10 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     setGameState(prev => {
       const player = prev.players.find(p => p.id === playerId);
       if (!player) return prev;
-      // Remove player from any other team first
       const updatedTeams = prev.teams.map(team => ({
         ...team,
         players: team.players.filter(p => p.id !== playerId)
       }));
-      // Add to new team
       return {
         ...prev,
         teams: updatedTeams.map(team =>
@@ -109,51 +105,44 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
 
   const startNewRound = useCallback(() => {
     setGameState(prev => {
-      // First, determine the initial state of teams for this new round (coin/curse reset)
       const teamsWithRoundResets = prev.teams.map(t => {
         let newCoins = t.coins;
-        if (t.isSeeking) { // If this team is currently designated as a seeker
-          newCoins = 0;     // Reset their coins for the new round
-        }
-        // Hiders keep their coins (for curses), non-hider/non-seeker teams also keep theirs.
-
+        // Seekers' coins are no longer reset here as they have unlimited coins for questions.
+        // Hiders retain their coins for curses.
+        
         let newCursesUsed = t.cursesUsed || 0;
-        if (t.isHiding) { // If this team is currently designated as a hider
-          newCursesUsed = 0; // Reset their curses used count for the new round
+        if (t.isHiding) {
+          newCursesUsed = 0; 
         }
         return {
           ...t,
-          coins: newCoins,
+          coins: newCoins, // Keep existing coins for hiders
           cursesUsed: newCursesUsed,
         };
       });
 
-      // Now find the hider and seekers from this processed list
       const hidingTeamForRound = teamsWithRoundResets.find(t => t.isHiding);
       const seekingTeamsForRound = teamsWithRoundResets.filter(t => t.isSeeking);
 
       if (!hidingTeamForRound || seekingTeamsForRound.length === 0) {
-        console.warn("Attempted to start round without proper team roles (hider and at least one seeker).");
-        // This toast should ideally be triggered from AdminPage before calling,
-        // but as a fallback:
-        toast?.({ title: "Cannot Start Round", description: "A hiding team and at least one seeking team must be designated and have their roles set before starting a new round.", variant: "destructive" });
-        return prev; // Return previous state if roles are not properly set
+        toast?.({ title: "Cannot Start Round", description: "A hiding team and at least one seeking team must be designated.", variant: "destructive" });
+        return prev;
       }
 
       const roundStartTime = new Date();
       const newRound: GameRound = {
         roundNumber: (prev.currentRound?.roundNumber || 0) + 1,
-        hidingTeam: hidingTeamForRound,       // Use the version with reset cursesUsed
-        seekingTeams: seekingTeamsForRound,   // Use the versions with reset coins
+        hidingTeam: hidingTeamForRound,
+        seekingTeams: seekingTeamsForRound,
         startTime: roundStartTime,
-        phaseStartTime: roundStartTime,         // Hiding phase starts immediately
+        phaseStartTime: roundStartTime,
         status: 'hiding-phase',
       };
 
       return {
         ...prev,
         currentRound: newRound,
-        teams: teamsWithRoundResets, // Update the main 'teams' array with reset states
+        teams: teamsWithRoundResets,
       };
     });
   }, []);
@@ -161,7 +150,6 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   const startSeekingPhase = useCallback(() => {
     setGameState(prev => {
       if (!prev.currentRound || prev.currentRound.status !== 'hiding-phase') {
-        console.warn("Cannot start seeking phase, not in hiding phase or no current round.");
         return prev;
       }
       return {
@@ -169,7 +157,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         currentRound: {
           ...prev.currentRound,
           status: 'seeking-phase',
-          phaseStartTime: new Date(), // Seeking phase starts now
+          phaseStartTime: new Date(), 
         },
       };
     });
@@ -181,8 +169,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       const finishedRound: GameRound = { ...prev.currentRound, endTime: new Date(), status: 'completed' };
       
       const updatedTeams = prev.teams.map(team => {
-        if (team.id === finishedRound.hidingTeam?.id && finishedRound.phaseStartTime) { // Check phaseStartTime
-          const hideEndTime = finishedRound.endTime || new Date(); // Use current time if endTime isn't set
+        if (team.id === finishedRound.hidingTeam?.id && finishedRound.phaseStartTime) {
+          const hideEndTime = finishedRound.endTime || new Date(); 
           const roundHidingDuration = Math.floor((hideEndTime.getTime() - new Date(finishedRound.phaseStartTime).getTime()) / 1000);
           if (roundHidingDuration > team.hidingTimeSeconds) {
             return { ...team, hidingTimeSeconds: roundHidingDuration };
@@ -211,12 +199,13 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     }));
   }, []);
 
+  // This function is still relevant for Hiders using coins for curses
   const updateTeamCoins = useCallback((teamId: string, amount: number, operation: 'add' | 'subtract' = 'add') => {
     setGameState(prev => ({
       ...prev,
       teams: prev.teams.map(team => {
         if (team.id === teamId) {
-          const currentCoins = team.coins || 0; // Ensure currentCoins is a number
+          const currentCoins = team.coins || 0;
           const newCoins = operation === 'add' ? currentCoins + amount : Math.max(0, currentCoins - amount);
           return { ...team, coins: newCoins };
         }

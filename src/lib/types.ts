@@ -10,7 +10,7 @@ export interface Team {
   players: Player[];
   isHiding: boolean;
   isSeeking: boolean;
-  coins: number;
+  coins: number; // Still used by Hiders for curses
   hidingTimeSeconds: number; // Longest time hidden in a round
   cursesUsed: number;
 }
@@ -21,10 +21,11 @@ export interface QuestionOption {
   id: string;
   name: string;
   category: QuestionCategory;
-  cost: number;
+  cost: number; // Will be 0 for seekers, but kept for potential future use or hider costs
   description: string;
   seekerPrompt?: string; // e.g. "Enter location for Radar"
   disabledCondition?: (gameState: GameState, team: Team) => boolean; // e.g. Photo disabled if seekers in zone
+  icon?: React.ElementType;
 }
 
 export interface AskedQuestion {
@@ -42,7 +43,7 @@ export interface Challenge {
   id:string;
   description: string;
   status: "pending" | "completed" | "failed" | "vetoed";
-  coinsEarned: number;
+  // coinsEarned is removed as seekers have unlimited coins
 }
 
 export type CurseDiceOutcome = 1 | 2 | 3 | 4 | 5 | 6;
@@ -52,6 +53,7 @@ export interface Curse {
   name: string;
   description: string;
   effect: (gameState: GameState, seekingTeam: Team) => void; // Placeholder for effect logic
+  icon?: React.ElementType;
 }
 
 export interface GameRound {
@@ -73,4 +75,3 @@ export interface GameState {
 }
 
 export type TeamRole = "hider" | "seeker" | "admin" | "spectator";
-

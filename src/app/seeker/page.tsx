@@ -4,7 +4,6 @@
 import { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -15,16 +14,16 @@ import { PageHeader } from "@/components/PageHeader";
 import { TimerDisplay } from "@/components/game/TimerDisplay";
 import { VetoConsequenceModal } from "@/components/game/VetoConsequenceModal";
 import { useToast } from '@/hooks/use-toast';
-import { Search, Coins, ShieldQuestion, Send, ThumbsUp, ThumbsDown, CircleDollarSign, ListChecks } from "lucide-react";
+import { Search, ShieldQuestion, Send, ThumbsUp, ThumbsDown, ListChecks } from "lucide-react";
 import { ScrollArea } from '@/components/ui/scroll-area';
 
 export default function SeekerPage() {
-  const { teams, currentRound, updateTeamCoins, startSeekingPhase } = useGameContext();
+  const { teams, currentRound, startSeekingPhase } = useGameContext(); // Removed updateTeamCoins
   const { toast } = useToast();
 
   const [myTeam, setMyTeam] = useState<Team | undefined>(undefined);
   
-  const [currentChallenge, setCurrentChallenge] = useState<Partial<Challenge>>({ description: "", coinsEarned: 0 });
+  const [currentChallengeDescription, setCurrentChallengeDescription] = useState<string>("");
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   
   const [selectedQuestionType, setSelectedQuestionType] = useState<QuestionOptionType | undefined>(undefined);
@@ -36,7 +35,17 @@ export default function SeekerPage() {
 
 
   useEffect(() => {
-    setMyTeam(teams.find(t => t.isSeeking));
+    // Attempt to find a team that is actively seeking in the current round
+    if (currentRound && currentRound.seekingTeams.length > 0) {
+        // This logic assumes a player belongs to one of the currentRound.seekingTeams.
+        // A more robust solution might involve a currentUser concept or team selection UI.
+        // For now, picking the first seeking team if multiple.
+        setMyTeam(teams.find(t => t.id === currentRound.seekingTeams[0].id && t.isSeeking));
+    } else {
+        // If no current round or no seeking teams in current round, try to find a team generally marked as seeking.
+        // This is a fallback and might not be desired depending on game flow.
+        setMyTeam(teams.find(t => t.isSeeking));
+    }
   }, [teams, currentRound]);
 
   const handleChallengeSubmit = (status: "completed" | "failed" | "vetoed") => {
@@ -44,29 +53,29 @@ export default function SeekerPage() {
       toast({ title: "Error", description: "No seeking team assigned.", variant: "destructive" });
       return;
     }
-    if (!currentChallenge.description) {
+    if (!currentChallengeDescription) {
         toast({ title: "Error", description: "Challenge description cannot be empty.", variant: "destructive" });
         return;
     }
 
     const challenge: Challenge = {
       id: `challenge-${Date.now()}`,
-      description: currentChallenge.description!,
+      description: currentChallengeDescription,
       status,
-      coinsEarned: status === "completed" ? (currentChallenge.coinsEarned || 10) : 0, 
+      // coinsEarned is removed from type, no longer relevant here
     };
     setChallenges(prev => [challenge, ...prev]);
 
     if (status === "completed") {
-      updateTeamCoins(myTeam.id, challenge.coinsEarned, 'add');
-      toast({ title: "Challenge Completed!", description: `+${challenge.coinsEarned} coins for ${myTeam.name}.` });
+      // No coins awarded for completing challenges anymore
+      toast({ title: "Challenge Completed!", description: `Good job, ${myTeam.name}!` });
     } else {
       setIsPenaltyActive(true);
       const newPenaltyEndTime = new Date(Date.now() + CHALLENGE_PENALTY_MINUTES * 60 * 1000);
       setPenaltyEndTime(newPenaltyEndTime);
       toast({ title: `Challenge ${status === "failed" ? "Failed" : "Vetoed"}`, description: `${CHALLENGE_PENALTY_MINUTES} min penalty for ${myTeam.name}.`, variant: "destructive" });
     }
-    setCurrentChallenge({ description: "", coinsEarned: 0 });
+    setCurrentChallengeDescription("");
   };
 
   const handleAskQuestion = () => {
@@ -78,10 +87,7 @@ export default function SeekerPage() {
         toast({ title: "Error", description: "Please select a question type and enter your question.", variant: "destructive" });
         return;
     }
-    if (myTeam.coins < selectedQuestionType.cost) {
-        toast({ title: "Not enough coins!", description: `You need ${selectedQuestionType.cost} coins for a ${selectedQuestionType.name} question.`, variant: "destructive"});
-        return;
-    }
+    // Coin check removed: if (myTeam.coins < selectedQuestionType.cost)
     if (isPenaltyActive) {
         toast({ title: "Penalty Active", description: "Cannot ask questions during a penalty.", variant: "destructive"});
         return;
@@ -96,15 +102,16 @@ export default function SeekerPage() {
       askingTeamId: myTeam.id,
     };
 
-    updateTeamCoins(myTeam.id, selectedQuestionType.cost, 'subtract');
+    // updateTeamCoins call removed
     setAskedQuestions(prev => [newQuestion, ...prev]);
-    toast({ title: "Question Asked!", description: `${selectedQuestionType.name} question sent. -${selectedQuestionType.cost} coins.` });
+    toast({ title: "Question Asked!", description: `${selectedQuestionType.name} question sent.` });
     
     setTimeout(() => {
         setAskedQuestions(prev => prev.map(q => q.id === newQuestion.id ? {...q, response: "Hider's mock response: Yes/No/Photo pending..."} : q));
     }, 3000);
 
     setQuestionText("");
+    // setSelectedQuestionType(undefined); // Optionally reset question type
   };
   
   const gamePhase = currentRound?.status || 'pending';
@@ -150,11 +157,11 @@ export default function SeekerPage() {
     <div className="space-y-8">
       <PageHeader 
         title={`Seeker View - Team: ${myTeam?.name || "N/A"}`}
-        description={isSeekingPhase ? "Find the hiders! Complete challenges for coins and ask questions." : "Hiding phase is active. Prepare your strategy!"}
+        description={isSeekingPhase ? "Find the hiders! Complete challenges and ask questions." : "Hiding phase is active. Prepare your strategy!"}
         icon={Search}
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6"> {/* Changed from lg:grid-cols-3 */}
         <TimerDisplay 
           title={timerTitle}
           durationMinutes={currentPhaseDuration}
@@ -162,26 +169,16 @@ export default function SeekerPage() {
           isActive={isHidingPhase || isSeekingPhase}
           onTimerEnd={isHidingPhase ? () => {
             toast({ title: "Hiding Phase Over!", description: "Seeking phase has begun!" });
-            startSeekingPhase();
+            startSeekingPhase(); // Call from context
           } : undefined}
           className="lg:col-span-1"
         />
-        <Card className="lg:col-span-1">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <CircleDollarSign className="h-5 w-5 text-primary"/>
-              Team Coins
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-4xl font-bold">{myTeam?.coins ?? 0}</p>
-          </CardContent>
-        </Card>
+        {/* Team Coins card removed */}
          {isPenaltyActive && penaltyEndTime && (
           <TimerDisplay
             title="Penalty Time Left"
-            durationMinutes={CHALLENGE_PENALTY_MINUTES} // This duration is fixed
-            phaseStartTime={new Date(penaltyEndTime.getTime() - CHALLENGE_PENALTY_MINUTES * 60 * 1000)} // Calculate start time based on end time
+            durationMinutes={CHALLENGE_PENALTY_MINUTES}
+            phaseStartTime={new Date(penaltyEndTime.getTime() - CHALLENGE_PENALTY_MINUTES * 60 * 1000)}
             isActive={isPenaltyActive}
             onTimerEnd={() => {
               setIsPenaltyActive(false);
@@ -209,37 +206,27 @@ export default function SeekerPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2"><ListChecks /> Challenges</CardTitle>
-              <CardDescription>Complete challenges to earn coins. Penalties apply for failure or veto.</CardDescription>
+              <CardDescription>Complete challenges. Penalties apply for failure or veto.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="challenge-desc">Challenge Description</Label>
                 <Textarea 
                   id="challenge-desc" 
-                  value={currentChallenge.description} 
-                  onChange={(e) => setCurrentChallenge(prev => ({ ...prev, description: e.target.value }))}
+                  value={currentChallengeDescription} 
+                  onChange={(e) => setCurrentChallengeDescription(e.target.value)}
                   placeholder="Describe the physical or location-based task" 
                   disabled={isPenaltyActive}
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="challenge-coins">Coins for Completion (optional)</Label>
-                <Input 
-                  type="number" 
-                  id="challenge-coins"
-                  value={currentChallenge.coinsEarned || ""}
-                  onChange={(e) => setCurrentChallenge(prev => ({...prev, coinsEarned: parseInt(e.target.value) || 0}))}
-                  placeholder="e.g., 10"
-                  disabled={isPenaltyActive}
-                />
-              </div>
+              {/* Coins for completion input removed */}
             </CardContent>
             <CardFooter className="flex flex-wrap gap-2">
-              <Button onClick={() => handleChallengeSubmit('completed')} disabled={isPenaltyActive || !currentChallenge.description} className="bg-green-600 hover:bg-green-700 flex items-center gap-2"><ThumbsUp/>Completed</Button>
-              <Button variant="outline" onClick={() => handleChallengeSubmit('failed')} disabled={isPenaltyActive || !currentChallenge.description} className="flex items-center gap-2"><ThumbsDown/>Failed</Button>
-              {currentChallenge.description && 
+              <Button onClick={() => handleChallengeSubmit('completed')} disabled={isPenaltyActive || !currentChallengeDescription} className="bg-green-600 hover:bg-green-700 flex items-center gap-2"><ThumbsUp/>Completed</Button>
+              <Button variant="outline" onClick={() => handleChallengeSubmit('failed')} disabled={isPenaltyActive || !currentChallengeDescription} className="flex items-center gap-2"><ThumbsDown/>Failed</Button>
+              {currentChallengeDescription && 
                 <VetoConsequenceModal 
-                  challengeDescription={currentChallenge.description} 
+                  challengeDescription={currentChallengeDescription} 
                   onConfirmVeto={() => handleChallengeSubmit('vetoed')} 
                 />
               }
@@ -249,7 +236,7 @@ export default function SeekerPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2"><ShieldQuestion /> Ask a Question</CardTitle>
-              <CardDescription>Use your coins to get clues about the hiders' location.</CardDescription>
+              <CardDescription>Get clues about the hiders' location.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
@@ -262,7 +249,7 @@ export default function SeekerPage() {
                   <SelectContent>
                     {QUESTION_OPTIONS.map(q => (
                       <SelectItem key={q.id} value={q.id} disabled={q.disabledCondition?.(null as any, myTeam!)}>
-                        {q.name} ({q.cost} coins) {q.disabledCondition?.(null as any, myTeam!) ? "(Disabled)" : ""}
+                        {q.name} {q.disabledCondition?.(null as any, myTeam!) ? "(Disabled)" : ""}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -284,7 +271,7 @@ export default function SeekerPage() {
             </CardContent>
             <CardFooter>
               <Button onClick={handleAskQuestion} disabled={isPenaltyActive || !selectedQuestionType || !questionText.trim()} className="flex items-center gap-2">
-                <Send /> Ask ({selectedQuestionType?.cost || 0} coins)
+                <Send /> Ask Question
               </Button>
             </CardFooter>
           </Card>
@@ -322,7 +309,7 @@ export default function SeekerPage() {
                   {challenges.map(c => (
                     <li key={c.id} className={`p-2 border rounded-md text-sm ${c.status === "completed" ? "border-green-500 bg-green-500/10" : "border-destructive bg-destructive/10"}`}>
                       <p className="font-medium">{c.description}</p>
-                      <p>Status: {c.status}, Coins: {c.coinsEarned}</p>
+                      <p>Status: {c.status}</p> {/* Removed coins display */}
                     </li>
                   ))}
                 </ul>
@@ -335,4 +322,3 @@ export default function SeekerPage() {
     </div>
   );
 }
-
