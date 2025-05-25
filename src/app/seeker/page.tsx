@@ -189,16 +189,9 @@ export default function SeekerPage() {
         toast({ title: "Penalty Active", description: "Cannot ask questions during a penalty.", variant: "destructive"});
         return;
     }
-     if (currentRound?.activeCurse) {
-        const curseDetails = CURSE_DICE_OPTIONS.find(c => c.number === currentRound.activeCurse!.curseId);
-        if (curseDetails?.requiresSeekerAction === 'photo' && curseDetails.name === "Curse of the Zoologist") {
-             toast({ title: "Curse Active", description: "You must resolve the Curse of the Zoologist (upload photo) before asking another question.", variant: "destructive"});
-            return;
-        }
-         if (curseDetails?.requiresSeekerAction === 'photo' && curseDetails.name === "Curse of the Luxury Car") {
-             toast({ title: "Curse Active", description: "You must resolve the Curse of the Luxury Car (upload photo) before asking another question.", variant: "destructive"});
-            return;
-        }
+    if (currentRound?.activeCurse) {
+        toast({ title: "Curse Active", description: "Cannot ask questions while a curse is active. Resolve the curse first.", variant: "destructive"});
+        return;
     }
 
 
@@ -394,7 +387,7 @@ export default function SeekerPage() {
                 <Label htmlFor="question-type">Question Type</Label>
                 <Select 
                   onValueChange={(value) => setSelectedQuestionType(QUESTION_OPTIONS.find(q => q.id === value))}
-                  disabled={isPenaltyActive}
+                  disabled={isPenaltyActive || !!currentRound?.activeCurse}
                   value={selectedQuestionType?.id}
                 >
                   <SelectTrigger id="question-type"><SelectValue placeholder="Select question type" /></SelectTrigger>
@@ -417,12 +410,12 @@ export default function SeekerPage() {
                   value={questionText}
                   onChange={(e) => setQuestionText(e.target.value)}
                   placeholder={selectedQuestionType?.seekerPrompt || "Enter your question based on the selected type..."}
-                  disabled={isPenaltyActive || !selectedQuestionType}
+                  disabled={isPenaltyActive || !selectedQuestionType || !!currentRound?.activeCurse}
                 />
               </div>
             </CardContent>
             <CardFooter>
-              <Button onClick={handleAskQuestion} disabled={isPenaltyActive || !selectedQuestionType || !questionText.trim()} className="flex items-center gap-2">
+              <Button onClick={handleAskQuestion} disabled={isPenaltyActive || !selectedQuestionType || !questionText.trim() || !!currentRound?.activeCurse} className="flex items-center gap-2">
                 <Send /> Ask Question
               </Button>
             </CardFooter>
@@ -483,3 +476,4 @@ export default function SeekerPage() {
     </div>
   );
 }
+
