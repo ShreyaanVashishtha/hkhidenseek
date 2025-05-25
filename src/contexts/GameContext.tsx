@@ -1,8 +1,8 @@
 
 "use client";
 
-import type { GameState, Player, Team, GameRound, TeamRole, AskedQuestion } from '@/lib/types';
-import { MTR_MAP_PLACEHOLDER_URL, INITIAL_COINS_HIDER_START, COINS_EARNED_PER_QUESTION } from '@/lib/constants';
+import type { GameState, Player, Team, GameRound, TeamRole, AskedQuestion, QuestionOption } from '@/lib/types';
+import { MTR_MAP_PLACEHOLDER_URL, INITIAL_COINS_HIDER_START, QUESTION_OPTIONS } from '@/lib/constants';
 import React, { createContext, useState, useCallback, ReactNode, useEffect } from 'react';
 import { toast } from '@/hooks/use-toast';
 
@@ -24,6 +24,7 @@ interface GameContextType extends GameState {
   isMobile: boolean;
   askQuestion: (question: AskedQuestion) => void;
   answerQuestion: (questionId: string, response: string | File) => void;
+  recordCurseUsed: (hiderTeamId: string) => void;
 }
 
 const defaultGameState: GameState = {
@@ -62,7 +63,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       players: [],
       isHiding: false,
       isSeeking: false,
-      coins: INITIAL_COINS_HIDER_START, // All teams start with initial coins, might be 0
+      coins: 0, // Start with 0, hiders earn, seekers irrelevant
       hidingTimeSeconds: 0,
       cursesUsed: 0,
     };
@@ -100,23 +101,18 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     setGameState(prev => ({
       ...prev,
       teams: prev.teams.map(team =>
-        team.id === teamId ? { ...team, isHiding, isSeeking } : team
+        team.id === teamId ? { ...team, isHiding, isSeeking, coins: isHiding ? INITIAL_COINS_HIDER_START : 0 } : team
       ),
     }));
   }, []);
 
   const startNewRound = useCallback(() => {
     setGameState(prev => {
-      const teamsWithRoundResets = prev.teams.map(t => {
-        // Hiders reset cursesUsed and start with a base number of coins (or carry over if logic changes)
-        // Seekers effectively have their coins managed elsewhere (questions are free for them)
-        return {
-          ...t,
-          cursesUsed: t.isHiding ? 0 : t.cursesUsed, // Reset curses for hiders
-          // Coins for hiders will accumulate from questions.
-          // Coins for seekers are conceptually unlimited / not tracked for spending on questions.
-        };
-      });
+      const teamsWithRoundResets = prev.teams.map(t => ({
+        ...t,
+        cursesUsed: t.isHiding ? 0 : t.cursesUsed,
+        coins: t.isHiding ? (t.coins || INITIAL_COINS_HIDER_START) : 0, // Hiders keep coins or start fresh, seekers always 0
+      }));
 
       const hidingTeamForRound = teamsWithRoundResets.find(t => t.isHiding);
       const seekingTeamsForRound = teamsWithRoundResets.filter(t => t.isSeeking);
@@ -125,7 +121,6 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         toast?.({ title: "Cannot Start Round", description: "A hiding team must be designated.", variant: "destructive" });
         return prev;
       }
-      // No longer require seeking teams to start round, as one team might be hiding only.
 
       const roundStartTime = new Date();
       const newRound: GameRound = {
@@ -141,7 +136,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       return {
         ...prev,
         currentRound: newRound,
-        teams: teamsWithRoundResets, // Ensure main teams list reflects these resets/updates
+        teams: teamsWithRoundResets, 
       };
     });
   }, []);
@@ -171,7 +166,6 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         if (team.id === finishedRound.hidingTeam?.id && finishedRound.phaseStartTime) {
           const hideEndTime = finishedRound.endTime || new Date(); 
           const roundHidingDuration = Math.floor((hideEndTime.getTime() - new Date(finishedRound.phaseStartTime).getTime()) / 1000);
-          // Update longest hiding time if this round was longer
           if (roundHidingDuration > team.hidingTimeSeconds) {
             return { ...team, hidingTimeSeconds: roundHidingDuration };
           }
@@ -183,7 +177,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         ...prev,
         currentRound: null,
         gameHistory: [...prev.gameHistory, finishedRound],
-        teams: updatedTeams, // Keep the updated hiding times
+        teams: updatedTeams, 
       };
     });
   }, []);
@@ -200,18 +194,46 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const updateTeamCoins = useCallback((teamId: string, amount: number, operation: 'add' | 'subtract' = 'add') => {
-    setGameState(prev => ({
-      ...prev,
-      teams: prev.teams.map(team => {
-        if (team.id === teamId) {
-          const currentCoins = team.coins || 0; // Ensure coins is a number
-          const newCoins = operation === 'add' ? currentCoins + amount : Math.max(0, currentCoins - amount);
-          return { ...team, coins: newCoins };
+    setGameState(prev => {
+        const newTeams = prev.teams.map(team => {
+            if (team.id === teamId) {
+                const currentCoins = team.coins || 0;
+                const newCoins = operation === 'add' ? currentCoins + amount : Math.max(0, currentCoins - amount);
+                return { ...team, coins: newCoins };
+            }
+            return team;
+        });
+
+        // Also update the team object within currentRound if it exists
+        let newCurrentRound = prev.currentRound;
+        if (newCurrentRound) {
+            if (newCurrentRound.hidingTeam?.id === teamId) {
+                const currentHidingTeamCoins = newCurrentRound.hidingTeam.coins || 0;
+                newCurrentRound.hidingTeam = {
+                    ...newCurrentRound.hidingTeam,
+                    coins: operation === 'add' ? currentHidingTeamCoins + amount : Math.max(0, currentHidingTeamCoins - amount)
+                };
+            }
+            newCurrentRound.seekingTeams = newCurrentRound.seekingTeams.map(st => {
+                if (st.id === teamId) {
+                    const currentSeekingTeamCoins = st.coins || 0;
+                    return {
+                        ...st,
+                        coins: operation === 'add' ? currentSeekingTeamCoins + amount : Math.max(0, currentSeekingTeamCoins - amount)
+                    };
+                }
+                return st;
+            });
         }
-        return team;
-      }),
-    }));
+
+        return {
+            ...prev,
+            teams: newTeams,
+            currentRound: newCurrentRound,
+        };
+    });
   }, []);
+
 
   const setMtrMapUrl = useCallback((url: string) => {
     setGameState(prev => ({ ...prev, mtrMapUrl: url }));
@@ -221,30 +243,37 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     setGameState(prev => {
       if (!prev.currentRound) return prev;
       
-      const updatedRound = {
-        ...prev.currentRound,
-        askedQuestions: [...prev.currentRound.askedQuestions, question],
-      };
+      const questionOption = QUESTION_OPTIONS.find(opt => opt.id === question.questionOptionId);
+      let coinsToAward = 0;
+      if (questionOption) {
+        coinsToAward = questionOption.hiderCoinsEarned;
+      }
 
-      // Award coins to the hiding team
       let updatedTeams = prev.teams;
-      if (updatedRound.hidingTeam) {
-        const hiderTeamId = updatedRound.hidingTeam.id;
+      let updatedHidingTeamInRound = prev.currentRound.hidingTeam;
+
+      if (prev.currentRound.hidingTeam && coinsToAward > 0) {
+        const hiderTeamId = prev.currentRound.hidingTeam.id;
         updatedTeams = prev.teams.map(team => {
           if (team.id === hiderTeamId) {
             const currentCoins = team.coins || 0;
-            return { ...team, coins: currentCoins + COINS_EARNED_PER_QUESTION };
+            return { ...team, coins: currentCoins + coinsToAward };
           }
           return team;
         });
-        // Also update the hidingTeam object within the currentRound to reflect new coins
-        if (updatedRound.hidingTeam) {
-            updatedRound.hidingTeam = {
-                ...updatedRound.hidingTeam,
-                coins: (updatedRound.hidingTeam.coins || 0) + COINS_EARNED_PER_QUESTION
+        if (updatedHidingTeamInRound) {
+            updatedHidingTeamInRound = {
+                ...updatedHidingTeamInRound,
+                coins: (updatedHidingTeamInRound.coins || 0) + coinsToAward
             };
         }
       }
+      
+      const updatedRound = {
+        ...prev.currentRound,
+        hidingTeam: updatedHidingTeamInRound,
+        askedQuestions: [...prev.currentRound.askedQuestions, question],
+      };
       
       return {
         ...prev,
@@ -269,6 +298,31 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     });
   }, []);
 
+  const recordCurseUsed = useCallback((hiderTeamId: string) => {
+    setGameState(prev => {
+      const newTeams = prev.teams.map(team => {
+        if (team.id === hiderTeamId) {
+          return { ...team, cursesUsed: (team.cursesUsed || 0) + 1 };
+        }
+        return team;
+      });
+
+      let newCurrentRound = prev.currentRound;
+      if (newCurrentRound && newCurrentRound.hidingTeam?.id === hiderTeamId) {
+        newCurrentRound.hidingTeam = {
+          ...newCurrentRound.hidingTeam,
+          cursesUsed: (newCurrentRound.hidingTeam.cursesUsed || 0) + 1
+        };
+      }
+      return {
+        ...prev,
+        teams: newTeams,
+        currentRound: newCurrentRound,
+      };
+    });
+  }, []);
+
+
   return (
     <GameContext.Provider value={{
       ...gameState,
@@ -288,6 +342,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       isMobile,
       askQuestion,
       answerQuestion,
+      recordCurseUsed,
     }}>
       {children}
     </GameContext.Provider>

@@ -1,7 +1,8 @@
 
 "use client";
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react'; // React import for Image
+import Image from 'next/image'; // For displaying photo responses
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -17,6 +18,45 @@ import { useToast } from '@/hooks/use-toast';
 import { Search, ShieldQuestion, Send, ThumbsUp, ThumbsDown, ListChecks } from "lucide-react";
 import { ScrollArea } from '@/components/ui/scroll-area';
 
+interface PhotoResponseDisplayProps {
+  file: File;
+}
+
+const PhotoResponseDisplay: React.FC<PhotoResponseDisplayProps> = ({ file }) => {
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (file) {
+      const objectUrl = URL.createObjectURL(file);
+      setImageUrl(objectUrl);
+
+      return () => {
+        if (objectUrl) {
+          URL.revokeObjectURL(objectUrl);
+        }
+        setImageUrl(null); 
+      };
+    }
+  }, [file]);
+
+  if (!imageUrl) {
+    return <p className="text-sm text-muted-foreground">Loading photo...</p>;
+  }
+
+  return (
+    <div className="mt-2">
+      <Image 
+        src={imageUrl} 
+        alt="Hider's photo response" 
+        width={300} 
+        height={225} 
+        className="rounded-md border object-contain" 
+      />
+    </div>
+  );
+};
+
+
 export default function SeekerPage() {
   const { teams, currentRound, startSeekingPhase, askQuestion } = useGameContext();
   const { toast } = useToast();
@@ -24,11 +64,10 @@ export default function SeekerPage() {
   const [myTeam, setMyTeam] = useState<Team | undefined>(undefined);
   
   const [currentChallengeDescription, setCurrentChallengeDescription] = useState<string>("");
-  const [challenges, setChallenges] = useState<Challenge[]>([]); // This can remain local to seeker page
+  const [challenges, setChallenges] = useState<Challenge[]>([]); 
   
   const [selectedQuestionType, setSelectedQuestionType] = useState<QuestionOptionType | undefined>(undefined);
   const [questionText, setQuestionText] = useState("");
-  // Removed local askedQuestions state, will use from context
 
   const [isPenaltyActive, setIsPenaltyActive] = useState(false);
   const [penaltyEndTime, setPenaltyEndTime] = useState<Date | null>(null);
@@ -36,9 +75,14 @@ export default function SeekerPage() {
 
   useEffect(() => {
     if (currentRound && currentRound.seekingTeams.length > 0) {
-        setMyTeam(teams.find(t => t.id === currentRound.seekingTeams[0].id && t.isSeeking));
+        // Attempt to find this user's specific seeking team if multiple seekers exist.
+        // This logic might need refinement based on how users are associated with teams.
+        // For now, assumes the first seeking team or any seeking team if single.
+        setMyTeam(teams.find(t => currentRound.seekingTeams.some(st => st.id === t.id) && t.isSeeking));
+    } else if (teams.some(t => t.isSeeking)) {
+        setMyTeam(teams.find(t => t.isSeeking)); // Fallback if currentRound isn't fully populated yet
     } else {
-        setMyTeam(teams.find(t => t.isSeeking));
+        setMyTeam(undefined);
     }
   }, [teams, currentRound]);
 
@@ -57,7 +101,7 @@ export default function SeekerPage() {
       description: currentChallengeDescription,
       status,
     };
-    setChallenges(prev => [challenge, ...prev]); // Local state for challenge history is fine
+    setChallenges(prev => [challenge, ...prev]);
 
     if (status === "completed") {
       toast({ title: "Challenge Completed!", description: `Good job, ${myTeam.name}!` });
@@ -91,14 +135,12 @@ export default function SeekerPage() {
       text: questionText,
       timestamp: new Date(),
       askingTeamId: myTeam.id,
-      // Response will be added by hider via context
     };
 
-    askQuestion(newQuestion); // Use context function
+    askQuestion(newQuestion); 
     toast({ title: "Question Asked!", description: `${selectedQuestionType.name} question sent.` });
     
     setQuestionText("");
-    // setSelectedQuestionType(undefined); // Optionally reset question type
   };
   
   const gamePhase = currentRound?.status || 'pending';
@@ -223,7 +265,7 @@ export default function SeekerPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2"><ShieldQuestion /> Ask a Question</CardTitle>
-              <CardDescription>Get clues about the hiders' location.</CardDescription>
+              <CardDescription>Get clues about the hiders' location. Questions are free for seekers.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
@@ -236,7 +278,7 @@ export default function SeekerPage() {
                   <SelectContent>
                     {QUESTION_OPTIONS.map(q => (
                       <SelectItem key={q.id} value={q.id} disabled={q.disabledCondition?.(null as any, myTeam!)}>
-                        {q.name} {q.disabledCondition?.(null as any, myTeam!) ? "(Disabled)" : ""}
+                        {q.name} {q.disabledCondition?.(null as any, myTeam!) ? "(Disabled)" : `(Hiders earn ${q.hiderCoinsEarned})`}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -275,7 +317,16 @@ export default function SeekerPage() {
                     <li key={q.id} className="p-3 border rounded-md bg-card/80">
                       <p className="font-semibold text-primary">{q.category}: <span className="text-foreground">{q.text}</span></p>
                       <p className="text-xs text-muted-foreground">Asked: {new Date(q.timestamp).toLocaleTimeString()}</p>
-                      {q.response && <p className="mt-1 text-sm text-accent-foreground bg-accent/20 p-2 rounded-md">Hider: {typeof q.response === 'string' ? q.response : "Photo response (not displayed)"}</p>}
+                      {q.response && (
+                        <div className="mt-1 text-sm text-accent-foreground bg-accent/20 p-2 rounded-md">
+                          Hider: 
+                          {typeof q.response === 'string' 
+                            ? q.response 
+                            : q.response instanceof File 
+                              ? <PhotoResponseDisplay file={q.response} /> 
+                              : "Invalid response format"}
+                        </div>
+                      )}
                       {!q.response && <p className="mt-1 text-sm text-muted-foreground italic">Awaiting response...</p>}
                     </li>
                   ))}

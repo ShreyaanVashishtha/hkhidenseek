@@ -10,16 +10,16 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { useGameContext } from "@/hooks/useGameContext";
 import type { AskedQuestion, Team } from "@/lib/types";
-import { CURSE_DICE_COST, CURSE_DICE_OPTIONS, MAX_CURSES_PER_ROUND, HIDING_PHASE_DURATION_MINUTES, SEEKING_PHASE_DURATION_MINUTES, COINS_EARNED_PER_QUESTION } from "@/lib/constants";
+import { CURSE_DICE_COST, CURSE_DICE_OPTIONS, MAX_CURSES_PER_ROUND, HIDING_PHASE_DURATION_MINUTES, SEEKING_PHASE_DURATION_MINUTES } from "@/lib/constants";
 import { PageHeader } from "@/components/PageHeader";
 import { TimerDisplay } from "@/components/game/TimerDisplay";
 import { MTRMapDisplay } from "@/components/game/MTRMapDisplay";
 import { useToast } from '@/hooks/use-toast';
-import { Eye, ShieldQuestion, Upload, Send, Dice5, Zap, Coins } from "lucide-react"; // Added Coins icon
+import { Eye, ShieldQuestion, Upload, Send, Dice5, Zap, Coins } from "lucide-react";
 import { ScrollArea } from '@/components/ui/scroll-area';
 
 export default function HiderPage() {
-  const { teams, currentRound, updateTeamCoins, startSeekingPhase, answerQuestion } = useGameContext();
+  const { teams, currentRound, updateTeamCoins, startSeekingPhase, answerQuestion, recordCurseUsed } = useGameContext();
   const { toast } = useToast();
 
   const [myTeam, setMyTeam] = useState<Team | undefined>(undefined); 
@@ -30,11 +30,10 @@ export default function HiderPage() {
   const [yesNoResponse, setYesNoResponse] = useState<"yes" | "no" | undefined>(undefined);
 
   const [rolledCurse, setRolledCurse] = useState<{ number: number; name: string; description: string; effect: string; icon: React.ElementType } | null>(null);
+  const [hasPendingRoll, setHasPendingRoll] = useState(false);
 
   useEffect(() => {
-    // Find the hider team from the context's currentRound if available, otherwise from teams list
     if (currentRound?.hidingTeam) {
-      // Ensure 'myTeam' state reflects the potentially updated coin balance from GameContext
       const updatedHidingTeamFromContext = teams.find(t => t.id === currentRound.hidingTeam!.id);
       setMyTeam(updatedHidingTeamFromContext);
     } else {
@@ -81,33 +80,36 @@ export default function HiderPage() {
       toast({ title: "Not enough coins!", description: `You need ${CURSE_DICE_COST} coins to buy Curse Dice. You have ${myTeam.coins}.`, variant: "destructive" });
       return;
     }
-    if (myTeam.cursesUsed >= MAX_CURSES_PER_ROUND) {
+    if ((myTeam.cursesUsed || 0) >= MAX_CURSES_PER_ROUND) {
       toast({ title: "Max Curses Used", description: `You have already used curse dice ${MAX_CURSES_PER_ROUND} times this round.`, variant: "destructive" });
       return;
     }
+    if (hasPendingRoll) {
+      toast({ title: "Roll Pending", description: "You already have a dice roll pending. Please roll it first.", variant: "destructive" });
+      return;
+    }
     updateTeamCoins(myTeam.id, CURSE_DICE_COST, 'subtract');
-    // The `myTeam` state will be updated via useEffect when `teams` from context changes.
+    setHasPendingRoll(true);
+    setRolledCurse(null); // Clear previous roll display
     toast({ title: "Curse Dice Purchased!", description: `-${CURSE_DICE_COST} coins. Roll the dice!` });
   };
 
   const handleRollCurseDice = () => {
-    if (!myTeam || (myTeam.cursesUsed || 0) === 0 || (myTeam.cursesUsed || 0) >= MAX_CURSES_PER_ROUND || !currentRound?.seekingTeams.length) { 
-        toast({ title: "Cannot Roll", description: "Buy curse dice first or max uses reached.", variant: "destructive" });
+    if (!myTeam || !hasPendingRoll || rolledCurse !== null) { 
+        toast({ title: "Cannot Roll", description: "Buy curse dice first or a curse is already active/rolled.", variant: "destructive" });
         return;
     }
-    // Increment cursesUsed via context (or a dedicated function if preferred)
-    // For simplicity, we can let the Admin verify, or add a function to context later.
-    // Here, we'll assume the buyCurse already implicitly means one use will occur.
-    // Or, we can update cursesUsed directly here and rely on it in context if needed.
-    // For now, we'll let the toast handle the UI and assume `myTeam.cursesUsed` is updated by `buyCurseDice` or its effect.
-    // A more robust solution might be: updateTeamCursesUsed(myTeam.id, 1, 'add');
+     if ((myTeam.cursesUsed || 0) >= MAX_CURSES_PER_ROUND) {
+      toast({ title: "Max Curses Used", description: `Cannot roll, max curses for this round reached.`, variant: "destructive" });
+      return;
+    }
 
     const roll = Math.floor(Math.random() * 6) + 1 as 1 | 2 | 3 | 4 | 5 | 6;
     const curse = CURSE_DICE_OPTIONS.find(c => c.number === roll);
     if (curse) {
         setRolledCurse(curse);
-        // Increment cursesUsed count on the team (optimistic update for UI, context should be source of truth)
-        setMyTeam(prev => prev ? ({...prev, cursesUsed: (prev.cursesUsed || 0) + 1 }) : undefined);
+        recordCurseUsed(myTeam.id); // Record that a curse has been officially used
+        setHasPendingRoll(false); // Consume the pending roll
         toast({ title: "Curse Rolled!", description: `Curse of ${curse.name} activated!` });
     }
   };
@@ -167,7 +169,7 @@ export default function HiderPage() {
                     <Coins className="h-6 w-6 text-yellow-500" />
                     Team Coins: {myTeam?.coins ?? 0}
                 </CardTitle>
-                <CardDescription>Earn {COINS_EARNED_PER_QUESTION} coins for each question seekers ask. Use coins for Curse Dice.</CardDescription>
+                <CardDescription>Earn coins when seekers ask questions. Use coins for Curse Dice.</CardDescription>
             </CardHeader>
         </Card>
 
@@ -205,7 +207,7 @@ export default function HiderPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2"><ShieldQuestion /> Incoming Questions ({questionsToAnswer.length})</CardTitle>
-              <CardDescription>Seekers are asking questions. Respond strategically to earn coins!</CardDescription>
+              <CardDescription>Seekers are asking questions. Respond strategically!</CardDescription>
             </CardHeader>
             <CardContent>
               {questionsToAnswer.length === 0 ? (
@@ -286,14 +288,14 @@ export default function HiderPage() {
             <CardContent className="flex flex-wrap gap-4 items-center">
                 <Button 
                     onClick={handleBuyCurseDice} 
-                    disabled={!myTeam || myTeam.coins < CURSE_DICE_COST || (myTeam.cursesUsed || 0) >= MAX_CURSES_PER_ROUND}
+                    disabled={!myTeam || myTeam.coins < CURSE_DICE_COST || (myTeam.cursesUsed || 0) >= MAX_CURSES_PER_ROUND || hasPendingRoll}
                     className="flex items-center gap-2"
                 >
                     <Dice5/> Buy Curse Dice ({CURSE_DICE_COST} coins)
                 </Button>
                 <Button 
                     onClick={handleRollCurseDice} 
-                    disabled={!myTeam || (myTeam.cursesUsed || 0) === 0 || (myTeam.cursesUsed || 0) >= MAX_CURSES_PER_ROUND || !currentRound?.seekingTeams.length || rolledCurse !== null}
+                    disabled={!myTeam || !hasPendingRoll || (myTeam.cursesUsed || 0) >= MAX_CURSES_PER_ROUND || rolledCurse !== null || !currentRound?.seekingTeams.length}
                     variant="outline"
                     className="flex items-center gap-2"
                 >
