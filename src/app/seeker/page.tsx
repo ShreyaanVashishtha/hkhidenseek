@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useGameContext } from "@/hooks/useGameContext";
-import type { Challenge, AskedQuestion, QuestionOption as QuestionOptionType } from "@/lib/types";
+import type { Challenge, AskedQuestion, QuestionOption as QuestionOptionType, Team } from "@/lib/types";
 import { QUESTION_OPTIONS, CHALLENGE_PENALTY_MINUTES, HIDING_PHASE_DURATION_MINUTES, SEEKING_PHASE_DURATION_MINUTES } from "@/lib/constants";
 import { PageHeader } from "@/components/PageHeader";
 import { TimerDisplay } from "@/components/game/TimerDisplay";
@@ -17,26 +17,25 @@ import { VetoConsequenceModal } from "@/components/game/VetoConsequenceModal";
 import { useToast } from '@/hooks/use-toast';
 import { Search, Coins, ShieldQuestion, Send, ThumbsUp, ThumbsDown, CircleDollarSign, ListChecks } from "lucide-react";
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
 
 export default function SeekerPage() {
-  const { teams, currentRound, updateTeamCoins } = useGameContext();
+  const { teams, currentRound, updateTeamCoins, startSeekingPhase } = useGameContext();
   const { toast } = useToast();
 
-  // For simplicity, assume first seeking team. Multi-team seeking needs more complex UI.
-  const [myTeam, setMyTeam] = useState(teams.find(t => t.isSeeking)); 
+  const [myTeam, setMyTeam] = useState<Team | undefined>(undefined);
   
   const [currentChallenge, setCurrentChallenge] = useState<Partial<Challenge>>({ description: "", coinsEarned: 0 });
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   
   const [selectedQuestionType, setSelectedQuestionType] = useState<QuestionOptionType | undefined>(undefined);
   const [questionText, setQuestionText] = useState("");
-  const [askedQuestions, setAskedQuestions] = useState<AskedQuestion[]>([]); // Mock responses
+  const [askedQuestions, setAskedQuestions] = useState<AskedQuestion[]>([]); 
 
   const [isPenaltyActive, setIsPenaltyActive] = useState(false);
+  const [penaltyEndTime, setPenaltyEndTime] = useState<Date | null>(null);
+
 
   useEffect(() => {
-    // Update myTeam if context changes (e.g., round starts/ends)
     setMyTeam(teams.find(t => t.isSeeking));
   }, [teams, currentRound]);
 
@@ -54,7 +53,7 @@ export default function SeekerPage() {
       id: `challenge-${Date.now()}`,
       description: currentChallenge.description!,
       status,
-      coinsEarned: status === "completed" ? (currentChallenge.coinsEarned || 10) : 0, // Default 10 coins
+      coinsEarned: status === "completed" ? (currentChallenge.coinsEarned || 10) : 0, 
     };
     setChallenges(prev => [challenge, ...prev]);
 
@@ -63,8 +62,9 @@ export default function SeekerPage() {
       toast({ title: "Challenge Completed!", description: `+${challenge.coinsEarned} coins for ${myTeam.name}.` });
     } else {
       setIsPenaltyActive(true);
+      const newPenaltyEndTime = new Date(Date.now() + CHALLENGE_PENALTY_MINUTES * 60 * 1000);
+      setPenaltyEndTime(newPenaltyEndTime);
       toast({ title: `Challenge ${status === "failed" ? "Failed" : "Vetoed"}`, description: `${CHALLENGE_PENALTY_MINUTES} min penalty for ${myTeam.name}.`, variant: "destructive" });
-      // Penalty timer starts (TimerDisplay handles this)
     }
     setCurrentChallenge({ description: "", coinsEarned: 0 });
   };
@@ -100,13 +100,11 @@ export default function SeekerPage() {
     setAskedQuestions(prev => [newQuestion, ...prev]);
     toast({ title: "Question Asked!", description: `${selectedQuestionType.name} question sent. -${selectedQuestionType.cost} coins.` });
     
-    // Mock hider response after a delay
     setTimeout(() => {
         setAskedQuestions(prev => prev.map(q => q.id === newQuestion.id ? {...q, response: "Hider's mock response: Yes/No/Photo pending..."} : q));
     }, 3000);
 
     setQuestionText("");
-    // setSelectedQuestionType(undefined); // Keep type selected for multiple questions of same type
   };
   
   const gamePhase = currentRound?.status || 'pending';
@@ -145,6 +143,8 @@ export default function SeekerPage() {
     );
   }
 
+  const currentPhaseDuration = isHidingPhase ? HIDING_PHASE_DURATION_MINUTES : SEEKING_PHASE_DURATION_MINUTES;
+  const timerTitle = isHidingPhase ? "Hiding Phase Ends In" : "Seeking Phase Time Left";
 
   return (
     <div className="space-y-8">
@@ -156,9 +156,14 @@ export default function SeekerPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <TimerDisplay 
-          title={isHidingPhase ? "Hiding Phase Ends In" : "Seeking Phase Time Left"}
-          durationMinutes={isHidingPhase ? HIDING_PHASE_DURATION_MINUTES : SEEKING_PHASE_DURATION_MINUTES}
+          title={timerTitle}
+          durationMinutes={currentPhaseDuration}
+          phaseStartTime={currentRound?.phaseStartTime}
           isActive={isHidingPhase || isSeekingPhase}
+          onTimerEnd={isHidingPhase ? () => {
+            toast({ title: "Hiding Phase Over!", description: "Seeking phase has begun!" });
+            startSeekingPhase();
+          } : undefined}
           className="lg:col-span-1"
         />
         <Card className="lg:col-span-1">
@@ -172,13 +177,15 @@ export default function SeekerPage() {
             <p className="text-4xl font-bold">{myTeam?.coins ?? 0}</p>
           </CardContent>
         </Card>
-         {isPenaltyActive && (
+         {isPenaltyActive && penaltyEndTime && (
           <TimerDisplay
             title="Penalty Time Left"
-            durationMinutes={CHALLENGE_PENALTY_MINUTES}
+            durationMinutes={CHALLENGE_PENALTY_MINUTES} // This duration is fixed
+            phaseStartTime={new Date(penaltyEndTime.getTime() - CHALLENGE_PENALTY_MINUTES * 60 * 1000)} // Calculate start time based on end time
             isActive={isPenaltyActive}
             onTimerEnd={() => {
               setIsPenaltyActive(false);
+              setPenaltyEndTime(null);
               toast({ title: "Penalty Over!", description: "You can resume normal actions." });
             }}
             className="lg:col-span-1"
@@ -328,3 +335,4 @@ export default function SeekerPage() {
     </div>
   );
 }
+

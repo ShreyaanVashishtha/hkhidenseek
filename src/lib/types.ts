@@ -58,7 +58,8 @@ export interface GameRound {
   roundNumber: number;
   hidingTeam: Team | null;
   seekingTeams: Team[];
-  startTime?: Date;
+  startTime?: Date; // General start of the round
+  phaseStartTime?: Date; // Start of the current phase (hiding or seeking)
   endTime?: Date;
   status: "pending" | "hiding-phase" | "seeking-phase" | "completed";
 }
@@ -72,3 +73,4 @@ export interface GameState {
 }
 
 export type TeamRole = "hider" | "seeker" | "admin" | "spectator";
+

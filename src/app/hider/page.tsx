@@ -17,7 +17,6 @@ import { MTRMapDisplay } from "@/components/game/MTRMapDisplay";
 import { useToast } from '@/hooks/use-toast';
 import { Eye, ShieldQuestion, Upload, Send, Dice5, Zap } from "lucide-react";
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
 
 // Mock: Assume questions are pushed to hiders. In a real app, this would come via WebSocket or polling.
 const MOCK_INCOMING_QUESTIONS: AskedQuestion[] = [
@@ -27,10 +26,10 @@ const MOCK_INCOMING_QUESTIONS: AskedQuestion[] = [
 
 
 export default function HiderPage() {
-  const { teams, currentRound, updateTeamCoins } = useGameContext();
+  const { teams, currentRound, updateTeamCoins, startSeekingPhase } = useGameContext();
   const { toast } = useToast();
 
-  const [myTeam, setMyTeam] = useState(teams.find(t => t.isHiding)); 
+  const [myTeam, setMyTeam] = useState<Team | undefined>(undefined); 
   
   const [incomingQuestions, setIncomingQuestions] = useState<AskedQuestion[]>(MOCK_INCOMING_QUESTIONS);
   const [selectedQuestionToAnswer, setSelectedQuestionToAnswer] = useState<AskedQuestion | null>(null);
@@ -38,11 +37,10 @@ export default function HiderPage() {
   const [responsePhoto, setResponsePhoto] = useState<File | null>(null);
   const [yesNoResponse, setYesNoResponse] = useState<"yes" | "no" | undefined>(undefined);
 
-  const [rolledCurse, setRolledCurse] = useState<{ number: number; name: string; effect: string; icon: React.ElementType } | null>(null);
+  const [rolledCurse, setRolledCurse] = useState<{ number: number; name: string; description: string; effect: string; icon: React.ElementType } | null>(null);
 
 
   useEffect(() => {
-    // Update myTeam if context changes
     setMyTeam(teams.find(t => t.isHiding));
   }, [teams, currentRound]);
 
@@ -63,7 +61,7 @@ export default function HiderPage() {
         return;
       }
       finalResponse = responsePhoto;
-    } else { // Relative, or others that might need text
+    } else { 
       if (!responseText.trim()) {
         toast({ title: "Error", description: "Please enter your response.", variant: "destructive" });
         return;
@@ -71,11 +69,9 @@ export default function HiderPage() {
       finalResponse = responseText;
     }
 
-    // Mock sending response
     console.log("Sending response for question:", selectedQuestionToAnswer.id, finalResponse);
     toast({ title: "Response Sent!", description: `Your response to "${selectedQuestionToAnswer.text.substring(0,20)}..." has been sent.` });
     
-    // Update UI: remove answered question or mark as answered
     setIncomingQuestions(prev => prev.filter(q => q.id !== selectedQuestionToAnswer.id));
     setSelectedQuestionToAnswer(null);
     setResponseText("");
@@ -93,15 +89,13 @@ export default function HiderPage() {
       toast({ title: "Max Curses Used", description: `You have already used curse dice ${MAX_CURSES_PER_ROUND} times this round.`, variant: "destructive" });
       return;
     }
-    // Deduct coins, allow roll
     updateTeamCoins(myTeam.id, CURSE_DICE_COST, 'subtract');
-    // In a real app, myTeam would be updated via context, so we'd need to reflect that by updating the team state
-    setMyTeam(prev => prev ? ({...prev, coins: prev.coins - CURSE_DICE_COST, cursesUsed: prev.cursesUsed + 1 }) : null);
+    setMyTeam(prev => prev ? ({...prev, coins: prev.coins - CURSE_DICE_COST, cursesUsed: (prev.cursesUsed || 0) + 1 }) : null);
     toast({ title: "Curse Dice Purchased!", description: `-${CURSE_DICE_COST} coins. Roll the dice!` });
   };
 
   const handleRollCurseDice = () => {
-    if (!myTeam || myTeam.cursesUsed === 0 || myTeam.cursesUsed > MAX_CURSES_PER_ROUND) { // cursesUsed is incremented on buy
+    if (!myTeam || (myTeam.cursesUsed || 0) === 0 || (myTeam.cursesUsed || 0) > MAX_CURSES_PER_ROUND) { 
         toast({ title: "Cannot Roll", description: "Buy curse dice first or max uses reached.", variant: "destructive" });
         return;
     }
@@ -110,7 +104,6 @@ export default function HiderPage() {
     if (curse) {
         setRolledCurse(curse);
         toast({ title: "Curse Rolled!", description: `Curse of ${curse.name} activated!` });
-        // Logic for re-roll if same curse is complex and omitted for brevity
     }
   };
   
@@ -151,6 +144,9 @@ export default function HiderPage() {
     );
   }
 
+  const currentPhaseDuration = isHidingPhase ? HIDING_PHASE_DURATION_MINUTES : SEEKING_PHASE_DURATION_MINUTES;
+  const timerTitle = isHidingPhase ? "Hiding Phase Ends In" : "Seeking Phase Active";
+
   return (
     <div className="space-y-8">
       <PageHeader 
@@ -161,9 +157,14 @@ export default function HiderPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <TimerDisplay 
-          title={isHidingPhase ? "Hiding Phase Ends In" : "Seeking Phase Active"}
-          durationMinutes={isHidingPhase ? HIDING_PHASE_DURATION_MINUTES : SEEKING_PHASE_DURATION_MINUTES}
+          title={timerTitle}
+          durationMinutes={currentPhaseDuration}
+          phaseStartTime={currentRound?.phaseStartTime}
           isActive={isHidingPhase || isSeekingPhase}
+          onTimerEnd={isHidingPhase ? () => {
+            toast({ title: "Hiding Phase Over!", description: "Seeking phase has begun!" });
+            startSeekingPhase();
+          } : undefined}
         />
         <MTRMapDisplay />
       </div>
@@ -242,7 +243,7 @@ export default function HiderPage() {
                     {responsePhoto && <p className="text-xs text-muted-foreground">Selected: {responsePhoto.name}</p>}
                   </div>
                 )}
-                {selectedQuestionToAnswer.category === "Relative" && ( // Example for text input
+                {selectedQuestionToAnswer.category === "Relative" && ( 
                    <div className="space-y-2">
                      <Label htmlFor="text-response">Your Detailed Response:</Label>
                      <Textarea 
@@ -275,7 +276,7 @@ export default function HiderPage() {
                 </Button>
                 <Button 
                     onClick={handleRollCurseDice} 
-                    disabled={!myTeam || (myTeam.cursesUsed || 0) === 0 || (myTeam.cursesUsed || 0) > MAX_CURSES_PER_ROUND || !currentRound?.seekingTeams.length} // Disable if no one to curse
+                    disabled={!myTeam || (myTeam.cursesUsed || 0) === 0 || (myTeam.cursesUsed || 0) > MAX_CURSES_PER_ROUND || !currentRound?.seekingTeams.length}
                     variant="outline"
                     className="flex items-center gap-2"
                 >
@@ -300,3 +301,4 @@ export default function HiderPage() {
     </div>
   );
 }
+

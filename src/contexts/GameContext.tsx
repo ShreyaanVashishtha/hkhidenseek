@@ -12,6 +12,7 @@ interface GameContextType extends GameState {
   removePlayerFromTeam: (playerId: string, teamId: string) => void;
   updateTeamRole: (teamId: string, isHiding: boolean, isSeeking: boolean) => void;
   startNewRound: () => void;
+  startSeekingPhase: () => void;
   endCurrentRound: () => void;
   updateHidingTime: (teamId: string, timeSeconds: number) => void;
   updateTeamCoins: (teamId: string, amount: number, operation?: 'add' | 'subtract') => void;
@@ -107,27 +108,43 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       const hidingTeam = prev.teams.find(t => t.isHiding);
       const seekingTeams = prev.teams.filter(t => t.isSeeking);
       if (!hidingTeam || seekingTeams.length === 0) {
-        // alert("Please assign one hiding team and at least one seeking team.");
-        // This should be handled by a toast notification in the UI
         console.warn("Attempted to start round without proper team roles.");
         return prev;
       }
+      const roundStartTime = new Date();
       const newRound: GameRound = {
         roundNumber: (prev.currentRound?.roundNumber || 0) + 1,
         hidingTeam,
         seekingTeams,
-        startTime: new Date(),
+        startTime: roundStartTime,
+        phaseStartTime: roundStartTime, // Hiding phase starts immediately
         status: 'hiding-phase',
       };
       return { 
         ...prev, 
         currentRound: newRound,
-        // Reset coins for seeking teams, reset curses used for hiding team
         teams: prev.teams.map(t => ({
           ...t,
-          coins: t.isSeeking ? 0 : t.coins,
-          cursesUsed: t.isHiding ? 0 : t.cursesUsed,
+          coins: t.isSeeking ? 0 : t.coins, // Reset coins for seekers
+          cursesUsed: t.isHiding ? 0 : t.cursesUsed, // Reset curses for hiders
         }))
+      };
+    });
+  }, []);
+
+  const startSeekingPhase = useCallback(() => {
+    setGameState(prev => {
+      if (!prev.currentRound || prev.currentRound.status !== 'hiding-phase') {
+        console.warn("Cannot start seeking phase, not in hiding phase or no current round.");
+        return prev;
+      }
+      return {
+        ...prev,
+        currentRound: {
+          ...prev.currentRound,
+          status: 'seeking-phase',
+          phaseStartTime: new Date(), // Seeking phase starts now
+        },
       };
     });
   }, []);
@@ -136,11 +153,25 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     setGameState(prev => {
       if (!prev.currentRound) return prev;
       const finishedRound: GameRound = { ...prev.currentRound, endTime: new Date(), status: 'completed' };
+      // Logic to update team's longest hiding time if they were the hider and this round's time is longer
+      const updatedTeams = prev.teams.map(team => {
+        if (team.id === finishedRound.hidingTeam?.id && finishedRound.startTime && finishedRound.phaseStartTime) {
+          // Calculate time hidden in this specific round
+          // This logic needs to be refined based on actual capture time or phase end.
+          // For now, let's assume endTime is capture time.
+          const roundHidingDuration = Math.floor(( (finishedRound.endTime?.getTime() || Date.now()) - new Date(finishedRound.phaseStartTime).getTime()) / 1000);
+          if (roundHidingDuration > team.hidingTimeSeconds) {
+            return { ...team, hidingTimeSeconds: roundHidingDuration };
+          }
+        }
+        return team;
+      });
+
       return {
         ...prev,
         currentRound: null,
         gameHistory: [...prev.gameHistory, finishedRound],
-        // Potentially update longest hiding times here or explicitly via updateHidingTime
+        teams: updatedTeams,
       };
     });
   }, []);
@@ -183,6 +214,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       removePlayerFromTeam,
       updateTeamRole,
       startNewRound,
+      startSeekingPhase,
       endCurrentRound,
       updateHidingTime,
       updateTeamCoins,
@@ -195,3 +227,4 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     </GameContext.Provider>
   );
 };
+
