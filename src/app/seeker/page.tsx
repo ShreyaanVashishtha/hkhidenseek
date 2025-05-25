@@ -18,32 +18,26 @@ import { Search, ShieldQuestion, Send, ThumbsUp, ThumbsDown, ListChecks } from "
 import { ScrollArea } from '@/components/ui/scroll-area';
 
 export default function SeekerPage() {
-  const { teams, currentRound, startSeekingPhase } = useGameContext(); // Removed updateTeamCoins
+  const { teams, currentRound, startSeekingPhase, askQuestion } = useGameContext();
   const { toast } = useToast();
 
   const [myTeam, setMyTeam] = useState<Team | undefined>(undefined);
   
   const [currentChallengeDescription, setCurrentChallengeDescription] = useState<string>("");
-  const [challenges, setChallenges] = useState<Challenge[]>([]);
+  const [challenges, setChallenges] = useState<Challenge[]>([]); // This can remain local to seeker page
   
   const [selectedQuestionType, setSelectedQuestionType] = useState<QuestionOptionType | undefined>(undefined);
   const [questionText, setQuestionText] = useState("");
-  const [askedQuestions, setAskedQuestions] = useState<AskedQuestion[]>([]); 
+  // Removed local askedQuestions state, will use from context
 
   const [isPenaltyActive, setIsPenaltyActive] = useState(false);
   const [penaltyEndTime, setPenaltyEndTime] = useState<Date | null>(null);
 
 
   useEffect(() => {
-    // Attempt to find a team that is actively seeking in the current round
     if (currentRound && currentRound.seekingTeams.length > 0) {
-        // This logic assumes a player belongs to one of the currentRound.seekingTeams.
-        // A more robust solution might involve a currentUser concept or team selection UI.
-        // For now, picking the first seeking team if multiple.
         setMyTeam(teams.find(t => t.id === currentRound.seekingTeams[0].id && t.isSeeking));
     } else {
-        // If no current round or no seeking teams in current round, try to find a team generally marked as seeking.
-        // This is a fallback and might not be desired depending on game flow.
         setMyTeam(teams.find(t => t.isSeeking));
     }
   }, [teams, currentRound]);
@@ -62,12 +56,10 @@ export default function SeekerPage() {
       id: `challenge-${Date.now()}`,
       description: currentChallengeDescription,
       status,
-      // coinsEarned is removed from type, no longer relevant here
     };
-    setChallenges(prev => [challenge, ...prev]);
+    setChallenges(prev => [challenge, ...prev]); // Local state for challenge history is fine
 
     if (status === "completed") {
-      // No coins awarded for completing challenges anymore
       toast({ title: "Challenge Completed!", description: `Good job, ${myTeam.name}!` });
     } else {
       setIsPenaltyActive(true);
@@ -87,7 +79,6 @@ export default function SeekerPage() {
         toast({ title: "Error", description: "Please select a question type and enter your question.", variant: "destructive" });
         return;
     }
-    // Coin check removed: if (myTeam.coins < selectedQuestionType.cost)
     if (isPenaltyActive) {
         toast({ title: "Penalty Active", description: "Cannot ask questions during a penalty.", variant: "destructive"});
         return;
@@ -100,16 +91,12 @@ export default function SeekerPage() {
       text: questionText,
       timestamp: new Date(),
       askingTeamId: myTeam.id,
+      // Response will be added by hider via context
     };
 
-    // updateTeamCoins call removed
-    setAskedQuestions(prev => [newQuestion, ...prev]);
+    askQuestion(newQuestion); // Use context function
     toast({ title: "Question Asked!", description: `${selectedQuestionType.name} question sent.` });
     
-    setTimeout(() => {
-        setAskedQuestions(prev => prev.map(q => q.id === newQuestion.id ? {...q, response: "Hider's mock response: Yes/No/Photo pending..."} : q));
-    }, 3000);
-
     setQuestionText("");
     // setSelectedQuestionType(undefined); // Optionally reset question type
   };
@@ -117,6 +104,8 @@ export default function SeekerPage() {
   const gamePhase = currentRound?.status || 'pending';
   const isHidingPhase = gamePhase === 'hiding-phase';
   const isSeekingPhase = gamePhase === 'seeking-phase';
+  const displayedAskedQuestions = currentRound?.askedQuestions || [];
+
 
   if (!myTeam && isSeekingPhase) {
     return (
@@ -161,7 +150,7 @@ export default function SeekerPage() {
         icon={Search}
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6"> {/* Changed from lg:grid-cols-3 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <TimerDisplay 
           title={timerTitle}
           durationMinutes={currentPhaseDuration}
@@ -169,11 +158,10 @@ export default function SeekerPage() {
           isActive={isHidingPhase || isSeekingPhase}
           onTimerEnd={isHidingPhase ? () => {
             toast({ title: "Hiding Phase Over!", description: "Seeking phase has begun!" });
-            startSeekingPhase(); // Call from context
+            startSeekingPhase(); 
           } : undefined}
           className="lg:col-span-1"
         />
-        {/* Team Coins card removed */}
          {isPenaltyActive && penaltyEndTime && (
           <TimerDisplay
             title="Penalty Time Left"
@@ -219,7 +207,6 @@ export default function SeekerPage() {
                   disabled={isPenaltyActive}
                 />
               </div>
-              {/* Coins for completion input removed */}
             </CardContent>
             <CardFooter className="flex flex-wrap gap-2">
               <Button onClick={() => handleChallengeSubmit('completed')} disabled={isPenaltyActive || !currentChallengeDescription} className="bg-green-600 hover:bg-green-700 flex items-center gap-2"><ThumbsUp/>Completed</Button>
@@ -279,12 +266,12 @@ export default function SeekerPage() {
           <Card>
             <CardHeader><CardTitle>Question Log & Responses</CardTitle></CardHeader>
             <CardContent>
-              {askedQuestions.length === 0 ? (
+              {displayedAskedQuestions.length === 0 ? (
                 <p className="text-muted-foreground">No questions asked yet.</p>
               ) : (
                 <ScrollArea className="h-[300px] pr-4">
                 <ul className="space-y-4">
-                  {askedQuestions.map(q => (
+                  {displayedAskedQuestions.map(q => (
                     <li key={q.id} className="p-3 border rounded-md bg-card/80">
                       <p className="font-semibold text-primary">{q.category}: <span className="text-foreground">{q.text}</span></p>
                       <p className="text-xs text-muted-foreground">Asked: {new Date(q.timestamp).toLocaleTimeString()}</p>
@@ -309,7 +296,7 @@ export default function SeekerPage() {
                   {challenges.map(c => (
                     <li key={c.id} className={`p-2 border rounded-md text-sm ${c.status === "completed" ? "border-green-500 bg-green-500/10" : "border-destructive bg-destructive/10"}`}>
                       <p className="font-medium">{c.description}</p>
-                      <p>Status: {c.status}</p> {/* Removed coins display */}
+                      <p>Status: {c.status}</p>
                     </li>
                   ))}
                 </ul>

@@ -18,20 +18,13 @@ import { useToast } from '@/hooks/use-toast';
 import { Eye, ShieldQuestion, Upload, Send, Dice5, Zap } from "lucide-react";
 import { ScrollArea } from '@/components/ui/scroll-area';
 
-// Mock: Assume questions are pushed to hiders. In a real app, this would come via WebSocket or polling.
-const MOCK_INCOMING_QUESTIONS: AskedQuestion[] = [
-  // { id: 'q1', questionOptionId: 'q_radar', category: 'Radar', text: "Are you near Tsim Sha Tsui Station?", timestamp: new Date(), askingTeamId: 'seekerTeam1' },
-  // { id: 'q2', questionOptionId: 'q_photo', category: 'Photo', text: "Take a photo of the nearest shop.", timestamp: new Date(), askingTeamId: 'seekerTeam2' },
-];
-
-
 export default function HiderPage() {
-  const { teams, currentRound, updateTeamCoins, startSeekingPhase } = useGameContext();
+  const { teams, currentRound, updateTeamCoins, startSeekingPhase, answerQuestion } = useGameContext();
   const { toast } = useToast();
 
   const [myTeam, setMyTeam] = useState<Team | undefined>(undefined); 
   
-  const [incomingQuestions, setIncomingQuestions] = useState<AskedQuestion[]>(MOCK_INCOMING_QUESTIONS);
+  // Removed local incomingQuestions state, will use from context
   const [selectedQuestionToAnswer, setSelectedQuestionToAnswer] = useState<AskedQuestion | null>(null);
   const [responseText, setResponseText] = useState("");
   const [responsePhoto, setResponsePhoto] = useState<File | null>(null);
@@ -39,11 +32,9 @@ export default function HiderPage() {
 
   const [rolledCurse, setRolledCurse] = useState<{ number: number; name: string; description: string; effect: string; icon: React.ElementType } | null>(null);
 
-
   useEffect(() => {
     setMyTeam(teams.find(t => t.isHiding));
   }, [teams, currentRound]);
-
 
   const handleSendResponse = () => {
     if (!selectedQuestionToAnswer || !myTeam) return;
@@ -69,10 +60,9 @@ export default function HiderPage() {
       finalResponse = responseText;
     }
 
-    console.log("Sending response for question:", selectedQuestionToAnswer.id, finalResponse);
+    answerQuestion(selectedQuestionToAnswer.id, finalResponse); // Use context function
     toast({ title: "Response Sent!", description: `Your response to "${selectedQuestionToAnswer.text.substring(0,20)}..." has been sent.` });
     
-    setIncomingQuestions(prev => prev.filter(q => q.id !== selectedQuestionToAnswer.id));
     setSelectedQuestionToAnswer(null);
     setResponseText("");
     setResponsePhoto(null);
@@ -90,12 +80,13 @@ export default function HiderPage() {
       return;
     }
     updateTeamCoins(myTeam.id, CURSE_DICE_COST, 'subtract');
-    setMyTeam(prev => prev ? ({...prev, coins: prev.coins - CURSE_DICE_COST, cursesUsed: (prev.cursesUsed || 0) + 1 }) : null);
+    // Optimistically update local myTeam state for UI responsiveness
+    setMyTeam(prev => prev ? ({...prev, coins: prev.coins - CURSE_DICE_COST, cursesUsed: (prev.cursesUsed || 0) + 1 }) : undefined);
     toast({ title: "Curse Dice Purchased!", description: `-${CURSE_DICE_COST} coins. Roll the dice!` });
   };
 
   const handleRollCurseDice = () => {
-    if (!myTeam || (myTeam.cursesUsed || 0) === 0 || (myTeam.cursesUsed || 0) > MAX_CURSES_PER_ROUND) { 
+    if (!myTeam || (myTeam.cursesUsed || 0) === 0 || (myTeam.cursesUsed || 0) > MAX_CURSES_PER_ROUND || !currentRound?.seekingTeams.length) { 
         toast({ title: "Cannot Roll", description: "Buy curse dice first or max uses reached.", variant: "destructive" });
         return;
     }
@@ -110,6 +101,9 @@ export default function HiderPage() {
   const gamePhase = currentRound?.status || 'pending';
   const isHidingPhase = gamePhase === 'hiding-phase';
   const isSeekingPhase = gamePhase === 'seeking-phase';
+
+  // Get questions that need answering from the context
+  const questionsToAnswer = currentRound?.askedQuestions?.filter(q => !q.response) || [];
 
 
   if (!myTeam && (isHidingPhase || isSeekingPhase)) {
@@ -191,15 +185,15 @@ export default function HiderPage() {
               <CardDescription>Seekers are asking questions. Respond strategically!</CardDescription>
             </CardHeader>
             <CardContent>
-              {incomingQuestions.length === 0 ? (
-                <p className="text-muted-foreground">No questions from seekers yet. Stay hidden!</p>
+              {questionsToAnswer.length === 0 ? (
+                <p className="text-muted-foreground">No unanswered questions from seekers yet. Stay hidden!</p>
               ) : (
                 <ScrollArea className="h-[300px] pr-4">
                 <ul className="space-y-4">
-                  {incomingQuestions.map(q => (
+                  {questionsToAnswer.map(q => (
                     <li key={q.id} className={`p-3 border rounded-md cursor-pointer hover:bg-accent/10 ${selectedQuestionToAnswer?.id === q.id ? 'ring-2 ring-primary bg-primary/5' : 'bg-card/80'}`} onClick={() => setSelectedQuestionToAnswer(q)}>
                       <p className="font-semibold text-primary">{q.category}: <span className="text-foreground">{q.text}</span></p>
-                      <p className="text-xs text-muted-foreground">From: Team Seeker (mock) | Received: {new Date(q.timestamp).toLocaleTimeString()}</p>
+                      <p className="text-xs text-muted-foreground">From: Team {currentRound?.seekingTeams.find(st => st.id === q.askingTeamId)?.name || 'Seeker'} | Received: {new Date(q.timestamp).toLocaleTimeString()}</p>
                     </li>
                   ))}
                 </ul>
@@ -301,4 +295,3 @@ export default function HiderPage() {
     </div>
   );
 }
-

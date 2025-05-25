@@ -64,6 +64,7 @@ export interface GameRound {
   phaseStartTime?: Date; // Start of the current phase (hiding or seeking)
   endTime?: Date;
   status: "pending" | "hiding-phase" | "seeking-phase" | "completed";
+  askedQuestions: AskedQuestion[]; // Added to store questions for the round
 }
 
 export interface GameState {
@@ -75,3 +76,4 @@ export interface GameState {
 }
 
 export type TeamRole = "hider" | "seeker" | "admin" | "spectator";
+

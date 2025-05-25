@@ -1,8 +1,8 @@
 
 "use client";
 
-import type { GameState, Player, Team, GameRound, TeamRole } from '@/lib/types';
-import { MTR_MAP_PLACEHOLDER_URL, INITIAL_COINS } from '@/lib/constants'; // Assuming INITIAL_COINS might be for hiders
+import type { GameState, Player, Team, GameRound, TeamRole, AskedQuestion } from '@/lib/types';
+import { MTR_MAP_PLACEHOLDER_URL, INITIAL_COINS } from '@/lib/constants';
 import React, { createContext, useState, useCallback, ReactNode, useEffect } from 'react';
 import { toast } from '@/hooks/use-toast';
 
@@ -17,11 +17,13 @@ interface GameContextType extends GameState {
   startSeekingPhase: () => void;
   endCurrentRound: () => void;
   updateHidingTime: (teamId: string, timeSeconds: number) => void;
-  updateTeamCoins: (teamId: string, amount: number, operation?: 'add' | 'subtract') => void; // Still needed for hiders
+  updateTeamCoins: (teamId: string, amount: number, operation?: 'add' | 'subtract') => void;
   setMtrMapUrl: (url: string) => void;
   setCurrentUserRole: (role: TeamRole | null) => void;
   currentUserRole: TeamRole | null;
   isMobile: boolean;
+  askQuestion: (question: AskedQuestion) => void;
+  answerQuestion: (questionId: string, response: string | File) => void;
 }
 
 const defaultGameState: GameState = {
@@ -60,7 +62,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       players: [],
       isHiding: false,
       isSeeking: false,
-      coins: INITIAL_COINS, // Hiders might start with some coins or earn them in other ways
+      coins: INITIAL_COINS,
       hidingTimeSeconds: 0,
       cursesUsed: 0,
     };
@@ -107,8 +109,9 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     setGameState(prev => {
       const teamsWithRoundResets = prev.teams.map(t => {
         let newCoins = t.coins;
-        // Seekers' coins are no longer reset here as they have unlimited coins for questions.
-        // Hiders retain their coins for curses.
+        if (t.isSeeking) {
+          newCoins = 0; // Seekers start with 0 coins
+        }
         
         let newCursesUsed = t.cursesUsed || 0;
         if (t.isHiding) {
@@ -116,7 +119,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         }
         return {
           ...t,
-          coins: newCoins, // Keep existing coins for hiders
+          coins: newCoins,
           cursesUsed: newCursesUsed,
         };
       });
@@ -137,6 +140,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         startTime: roundStartTime,
         phaseStartTime: roundStartTime,
         status: 'hiding-phase',
+        askedQuestions: [], // Initialize askedQuestions for the new round
       };
 
       return {
@@ -199,7 +203,6 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     }));
   }, []);
 
-  // This function is still relevant for Hiders using coins for curses
   const updateTeamCoins = useCallback((teamId: string, amount: number, operation: 'add' | 'subtract' = 'add') => {
     setGameState(prev => ({
       ...prev,
@@ -218,6 +221,33 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     setGameState(prev => ({ ...prev, mtrMapUrl: url }));
   }, []);
 
+  const askQuestion = useCallback((question: AskedQuestion) => {
+    setGameState(prev => {
+      if (!prev.currentRound) return prev;
+      return {
+        ...prev,
+        currentRound: {
+          ...prev.currentRound,
+          askedQuestions: [...prev.currentRound.askedQuestions, question],
+        },
+      };
+    });
+  }, []);
+
+  const answerQuestion = useCallback((questionId: string, response: string | File) => {
+    setGameState(prev => {
+      if (!prev.currentRound) return prev;
+      return {
+        ...prev,
+        currentRound: {
+          ...prev.currentRound,
+          askedQuestions: prev.currentRound.askedQuestions.map(q =>
+            q.id === questionId ? { ...q, response } : q
+          ),
+        },
+      };
+    });
+  }, []);
 
   return (
     <GameContext.Provider value={{
@@ -235,7 +265,9 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       setMtrMapUrl,
       currentUserRole,
       setCurrentUserRole,
-      isMobile
+      isMobile,
+      askQuestion,
+      answerQuestion,
     }}>
       {children}
     </GameContext.Provider>
