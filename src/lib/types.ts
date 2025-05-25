@@ -44,7 +44,6 @@ export interface Challenge {
   id:string;
   description: string;
   status: "pending" | "completed" | "failed" | "vetoed";
-  // coinsEarned removed as seekers have unlimited coins
 }
 
 export type CurseDiceOutcome = 1 | 2 | 3 | 4 | 5 | 6;
@@ -87,7 +86,12 @@ export interface GameState {
   currentRound: GameRound | null;
   gameHistory: GameRound[];
   mtrMapUrl?: string;
+  adminPin?: string;
+  hiderPin?: string;
+  seekerPin?: string;
+  isAdminAuthenticated?: boolean;
+  isHiderAuthenticated?: boolean;
+  isSeekerAuthenticated?: boolean;
 }
 
 export type TeamRole = "hider" | "seeker" | "admin" | "spectator";
-

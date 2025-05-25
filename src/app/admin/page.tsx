@@ -10,13 +10,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useGameContext } from "@/hooks/useGameContext";
 import type { Player, Team } from "@/lib/types";
 import { PageHeader } from "@/components/PageHeader";
-import { ShieldCheck, Users, UserPlus, Play, StopCircle, Shuffle, Trash2, Map, Forward, ZapOff, Zap } from "lucide-react";
+import { ShieldCheck, Users, UserPlus, Play, StopCircle, Shuffle, Trash2, Map, Forward, ZapOff, KeyRound, LogOut } from "lucide-react";
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { CURSE_DICE_OPTIONS } from '@/lib/constants';
+import { PinProtectPage } from '@/components/auth/PinProtectPage';
 
-export default function AdminPage() {
+function AdminPageContent() {
   const { 
     players, 
     teams, 
@@ -31,7 +32,10 @@ export default function AdminPage() {
     endCurrentRound,
     mtrMapUrl,
     setMtrMapUrl,
-    clearActiveCurse // Added this
+    clearActiveCurse,
+    adminPin, hiderPin, seekerPin,
+    setAdminPin, setHiderPin, setSeekerPin,
+    logoutAdmin, logoutHider, logoutSeeker
   } = useGameContext();
   const { toast } = useToast();
 
@@ -40,6 +44,10 @@ export default function AdminPage() {
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | undefined>(undefined);
   const [selectedTeamId, setSelectedTeamId] = useState<string | undefined>(undefined);
   const [mapUrlInput, setMapUrlInput] = useState(mtrMapUrl || "");
+
+  const [adminPinInput, setAdminPinInput] = useState("");
+  const [hiderPinInput, setHiderPinInput] = useState("");
+  const [seekerPinInput, setSeekerPinInput] = useState("");
 
   useEffect(() => {
     setMapUrlInput(mtrMapUrl || "");
@@ -70,7 +78,6 @@ export default function AdminPage() {
       assignPlayerToTeam(selectedPlayerId, selectedTeamId);
       toast({ title: "Player Assigned", description: `Player assigned to team.` });
       setSelectedPlayerId(undefined);
-      // setSelectedTeamId(undefined); // Keep team selected for multiple assignments
     } else {
       toast({ title: "Error", description: "Please select a player and a team.", variant: "destructive" });
     }
@@ -144,6 +151,22 @@ export default function AdminPage() {
       toast({ title: "Error", description: "No active curse to clear.", variant: "destructive" });
     }
   };
+
+  const handleSetAdminPin = () => {
+    if (adminPinInput.trim()) setAdminPin(adminPinInput.trim());
+    else toast({ title: "Error", description: "Admin PIN cannot be empty.", variant: "destructive"});
+    setAdminPinInput("");
+  };
+  const handleSetHiderPin = () => {
+    if (hiderPinInput.trim()) setHiderPin(hiderPinInput.trim());
+    else toast({ title: "Error", description: "Hider PIN cannot be empty.", variant: "destructive"});
+    setHiderPinInput("");
+  };
+  const handleSetSeekerPin = () => {
+    if (seekerPinInput.trim()) setSeekerPin(seekerPinInput.trim());
+    else toast({ title: "Error", description: "Seeker PIN cannot be empty.", variant: "destructive"});
+    setSeekerPinInput("");
+  };
   
   const activeCurseDetails = currentRound?.activeCurse 
     ? CURSE_DICE_OPTIONS.find(c => c.number === currentRound.activeCurse!.curseId)
@@ -151,7 +174,44 @@ export default function AdminPage() {
 
   return (
     <div className="space-y-8">
-      <PageHeader title="Admin Panel" description="Manage game settings, players, teams, and rounds." icon={ShieldCheck} />
+      <PageHeader title="Admin Panel" description="Manage game settings, players, teams, rounds, and access PINs." icon={ShieldCheck} />
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><KeyRound /> Access Control & PIN Management</CardTitle>
+          <CardDescription>Set or update PINs for accessing different game panels. Clear PINs by setting an empty value (not recommended for Admin PIN if game is public).</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="space-y-2">
+            <Label htmlFor="admin-pin">Admin Panel PIN (current: {adminPin ? "Set" : "Not Set"})</Label>
+            <div className="flex gap-2">
+              <Input id="admin-pin" type="password" value={adminPinInput} onChange={(e) => setAdminPinInput(e.target.value)} placeholder="Enter new Admin PIN" />
+              <Button onClick={handleSetAdminPin}>Set Admin PIN</Button>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="hider-pin">Hider Panel PIN (current: {hiderPin ? "Set" : "Not Set"})</Label>
+            <div className="flex gap-2">
+              <Input id="hider-pin" type="password" value={hiderPinInput} onChange={(e) => setHiderPinInput(e.target.value)} placeholder="Enter new Hider PIN" />
+              <Button onClick={handleSetHiderPin}>Set Hider PIN</Button>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="seeker-pin">Seeker Panel PIN (current: {seekerPin ? "Set" : "Not Set"})</Label>
+            <div className="flex gap-2">
+              <Input id="seeker-pin" type="password" value={seekerPinInput} onChange={(e) => setSeekerPinInput(e.target.value)} placeholder="Enter new Seeker PIN" />
+              <Button onClick={handleSetSeekerPin}>Set Seeker PIN</Button>
+            </div>
+          </div>
+          <Separator />
+           <CardDescription>Force logout users from their authenticated sessions (e.g., for testing PIN entry).</CardDescription>
+          <div className="flex flex-wrap gap-2">
+             <Button variant="outline" onClick={logoutAdmin} className="flex items-center gap-2"><LogOut /> Logout Admin Session</Button>
+             <Button variant="outline" onClick={logoutHider} className="flex items-center gap-2"><LogOut /> Logout Hider Session</Button>
+             <Button variant="outline" onClick={logoutSeeker} className="flex items-center gap-2"><LogOut /> Logout Seeker Session</Button>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card>
@@ -330,5 +390,13 @@ export default function AdminPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function AdminPage() {
+  return (
+    <PinProtectPage role="admin">
+      <AdminPageContent />
+    </PinProtectPage>
   );
 }

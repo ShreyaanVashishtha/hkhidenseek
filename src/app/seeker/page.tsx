@@ -16,8 +16,9 @@ import { PageHeader } from "@/components/PageHeader";
 import { TimerDisplay } from "@/components/game/TimerDisplay";
 import { VetoConsequenceModal } from "@/components/game/VetoConsequenceModal";
 import { useToast } from '@/hooks/use-toast';
-import { Search, ShieldQuestion, Send, ThumbsUp, ThumbsDown, ListChecks, Zap, Upload, CheckSquare, AlertTriangle } from "lucide-react";
+import { Search, ShieldQuestion, Send, ThumbsUp, ThumbsDown, ListChecks, Zap, Upload, CheckSquare, AlertTriangle, Dice6 } from "lucide-react";
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { PinProtectPage } from '@/components/auth/PinProtectPage';
 
 interface PhotoResponseDisplayProps {
   file: File;
@@ -84,7 +85,6 @@ const SeekerCursePhotoUpload: React.FC<SeekerCursePhotoUploadProps> = ({ onPhoto
     if (cursePhoto) {
       onPhotoSubmit(cursePhoto);
       toast({ title: "Photo Submitted for Curse", description: "Your photo has been submitted for hider review." });
-      // Do not clear photo here, let parent component manage its display state after submission
     } else {
       toast({ title: "No Photo Selected", description: "Please select a photo to submit.", variant: "destructive" });
     }
@@ -113,14 +113,14 @@ const SeekerCursePhotoUpload: React.FC<SeekerCursePhotoUploadProps> = ({ onPhoto
         </div>
       )}
       <Button onClick={handleSubmit} disabled={!cursePhoto || disabled} className="w-full flex items-center gap-2">
-        <Upload className="h-4 w-4" /> Submit Photo
+        <Upload className="h-4 w-4" /> Submit Photo & Resolve
       </Button>
     </div>
   );
 };
 
 
-export default function SeekerPage() {
+function SeekerPageContent() {
   const { teams, currentRound, startSeekingPhase, askQuestion, clearActiveCurse, seekerCompletesCurseAction } = useGameContext();
   const { toast } = useToast();
 
@@ -134,18 +134,17 @@ export default function SeekerPage() {
 
   const [isPenaltyActive, setIsPenaltyActive] = useState(false);
   const [penaltyEndTime, setPenaltyEndTime] = useState<Date | null>(null);
+  const [gamblerSteps, setGamblerSteps] = useState<number | null>(null);
 
 
   useEffect(() => {
     if (currentRound && currentRound.seekingTeams.length > 0) {
-        // Attempt to find a team from `teams` that matches an ID in `currentRound.seekingTeams` AND is marked as seeking
         const userTeam = teams.find(t => currentRound.seekingTeams.some(st => st.id === t.id) && t.isSeeking);
         setMyTeam(userTeam);
     } else if (teams.some(t => t.isSeeking)) {
-        // Fallback if currentRound isn't fully populated yet or seekingTeams is empty, but some team is marked as seeking
         setMyTeam(teams.find(t => t.isSeeking)); 
     } else {
-        setMyTeam(undefined); // No seeking team found
+        setMyTeam(undefined); 
     }
   }, [teams, currentRound]);
 
@@ -168,7 +167,7 @@ export default function SeekerPage() {
 
     if (status === "completed") {
       toast({ title: "Challenge Completed!", description: `Good job, ${myTeam.name}!` });
-    } else { // failed or vetoed
+    } else { 
       setIsPenaltyActive(true);
       const newPenaltyEndTime = new Date(Date.now() + CHALLENGE_PENALTY_MINUTES * 60 * 1000);
       setPenaltyEndTime(newPenaltyEndTime);
@@ -195,7 +194,6 @@ export default function SeekerPage() {
         return;
     }
 
-
     const newQuestion: AskedQuestion = {
       id: `asked-${Date.now()}`,
       questionOptionId: selectedQuestionType.id,
@@ -209,7 +207,6 @@ export default function SeekerPage() {
     toast({ title: "Question Asked!", description: `${selectedQuestionType.name} question sent. Hiders earn ${selectedQuestionType.hiderCoinsEarned} coins.` });
     
     setQuestionText("");
-    // setSelectedQuestionType(undefined); // Optionally reset selected type
   };
   
   const gamePhase = currentRound?.status || 'pending';
@@ -220,6 +217,10 @@ export default function SeekerPage() {
   const activeCurseDetails = currentRound?.activeCurse 
     ? CURSE_DICE_OPTIONS.find(c => c.number === currentRound.activeCurse!.curseId)
     : null;
+
+  const handleRollForGamblerSteps = () => {
+    setGamblerSteps(Math.floor(Math.random() * 6) + 1);
+  };
 
   if (!myTeam && isSeekingPhase) {
     return (
@@ -311,16 +312,13 @@ export default function SeekerPage() {
             <Card className="border-destructive bg-destructive/10">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-destructive">
-                  <activeCurseDetails.icon className="h-6 w-6" />
+                  {activeCurseDetails.icon && <activeCurseDetails.icon className="h-6 w-6" />}
                   Curse Active: {activeCurseDetails.name}
                 </CardTitle>
                 <CardDescription className="text-destructive/90">
                   {activeCurseDetails.description} <br />
-                  {activeCurseDetails.name === "Curse of the Zoologist" && currentRound.activeCurse.hiderInputText && (
-                    <span className="font-semibold">Hider's animal category: "{currentRound.activeCurse.hiderInputText}"</span>
-                  )}
-                   {activeCurseDetails.name === "Curse of the Luxury Car" && currentRound.activeCurse.hiderInputText && ( // Assuming hiderInputText might be used for car description
-                    <span className="font-semibold">Hider's car details: "{currentRound.activeCurse.hiderInputText}"</span>
+                  { (activeCurseDetails.name === "Curse of the Zoologist" || activeCurseDetails.name === "Curse of the Luxury Car") && currentRound.activeCurse.hiderInputText && (
+                    <span className="font-semibold">Hider's input: "{currentRound.activeCurse.hiderInputText}"</span>
                   )}
                   <br/>
                   <strong>Effect on Seekers:</strong> {activeCurseDetails.effect}
@@ -329,23 +327,35 @@ export default function SeekerPage() {
               <CardContent>
                 {currentRound.activeCurse.resolutionStatus === 'pending_hider_acknowledgement' ? (
                   <p className="font-semibold text-primary">Photo submitted. Awaiting hider review.</p>
-                ) : activeCurseDetails.durationMinutes && currentRound.activeCurse.startTime ? (
+                ) : activeCurseDetails.durationMinutes && currentRound.activeCurse.startTime && currentRound.activeCurse.resolutionStatus === 'pending_seeker_action' ? (
+                  <>
                   <TimerDisplay
                     title="Curse Time Remaining"
                     durationMinutes={activeCurseDetails.durationMinutes}
                     phaseStartTime={new Date(currentRound.activeCurse.startTime)}
-                    isActive={true} 
+                    isActive={currentRound.activeCurse.resolutionStatus === 'pending_seeker_action'}
                     onTimerEnd={() => {
                       toast({ title: "Curse Expired", description: `${activeCurseDetails.name} is no longer active.` });
-                      clearActiveCurse();
+                      clearActiveCurse(); // Context function
                     }}
                     className="text-sm"
                   />
-                ) : activeCurseDetails.requiresSeekerAction === 'confirmation' ? (
+                  {activeCurseDetails.number === 3 && ( // Curse of the Gambler's Feet ID = 3
+                    <div className="mt-3">
+                      <Button onClick={handleRollForGamblerSteps} className="w-full flex items-center gap-2">
+                        <Dice6 className="h-4 w-4"/> Roll for Steps
+                      </Button>
+                      {gamblerSteps !== null && (
+                        <p className="mt-2 text-center text-lg font-semibold">You can take: {gamblerSteps} step(s). Re-roll after moving.</p>
+                      )}
+                    </div>
+                  )}
+                  </>
+                ) : activeCurseDetails.requiresSeekerAction === 'confirmation' && currentRound.activeCurse.resolutionStatus === 'pending_seeker_action' ? (
                   <Button onClick={() => seekerCompletesCurseAction()} className="w-full flex items-center gap-2 mt-2" disabled={isCurseActionDisabled}>
                      <CheckSquare className="h-4 w-4" /> Mark Curse Resolved
                   </Button>
-                ) : activeCurseDetails.requiresSeekerAction === 'photo' ? (
+                ) : activeCurseDetails.requiresSeekerAction === 'photo' && currentRound.activeCurse.resolutionStatus === 'pending_seeker_action' ? (
                    <SeekerCursePhotoUpload 
                      onPhotoSubmit={(file) => seekerCompletesCurseAction(file)}
                      disabled={isCurseActionDisabled}
@@ -492,3 +502,10 @@ export default function SeekerPage() {
   );
 }
 
+export default function SeekerPage() {
+  return (
+    <PinProtectPage role="seeker">
+      <SeekerPageContent />
+    </PinProtectPage>
+  );
+}

@@ -19,8 +19,8 @@ interface GameContextType extends GameState {
   updateHidingTime: (teamId: string, timeSeconds: number) => void;
   updateTeamCoins: (teamId: string, amount: number, operation?: 'add' | 'subtract') => void;
   setMtrMapUrl: (url: string) => void;
-  setCurrentUserRole: (role: TeamRole | null) => void;
-  currentUserRole: TeamRole | null;
+  setCurrentUserRole: (role: TeamRole | null) => void; // This might not be used if PinProtectPage handles roles
+  currentUserRole: TeamRole | null; // This might not be used
   isMobile: boolean;
   askQuestion: (question: AskedQuestion) => void;
   answerQuestion: (questionId: string, response: string | File) => void;
@@ -29,6 +29,17 @@ interface GameContextType extends GameState {
   clearActiveCurse: () => void;
   seekerCompletesCurseAction: (photoFile?: File) => void;
   hiderAcknowledgesSeekerPhoto: () => void;
+
+  // PIN and Auth functions
+  setAdminPin: (pin: string) => void;
+  setHiderPin: (pin: string) => void;
+  setSeekerPin: (pin: string) => void;
+  authenticateAdmin: (enteredPin: string) => boolean;
+  authenticateHider: (enteredPin: string) => boolean;
+  authenticateSeeker: (enteredPin: string) => boolean;
+  logoutAdmin: () => void;
+  logoutHider: () => void;
+  logoutSeeker: () => void;
 }
 
 const defaultGameState: GameState = {
@@ -37,6 +48,12 @@ const defaultGameState: GameState = {
   currentRound: null,
   gameHistory: [],
   mtrMapUrl: MTR_MAP_PLACEHOLDER_URL,
+  adminPin: undefined,
+  hiderPin: undefined,
+  seekerPin: undefined,
+  isAdminAuthenticated: false,
+  isHiderAuthenticated: false,
+  isSeekerAuthenticated: false,
 };
 
 export const GameContext = createContext<GameContextType | undefined>(undefined);
@@ -51,6 +68,26 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  useEffect(() => {
+    // Load PINs and auth status from localStorage on initial load
+    const loadedAdminPin = localStorage.getItem('adminPin_mtrGame');
+    const loadedHiderPin = localStorage.getItem('hiderPin_mtrGame');
+    const loadedSeekerPin = localStorage.getItem('seekerPin_mtrGame');
+    const loadedIsAdminAuthed = localStorage.getItem('isAdminAuthenticated_mtrGame') === 'true';
+    const loadedIsHiderAuthed = localStorage.getItem('isHiderAuthenticated_mtrGame') === 'true';
+    const loadedIsSeekerAuthed = localStorage.getItem('isSeekerAuthenticated_mtrGame') === 'true';
+
+    setGameState(prev => ({
+      ...prev,
+      adminPin: loadedAdminPin || undefined,
+      hiderPin: loadedHiderPin || undefined,
+      seekerPin: loadedSeekerPin || undefined,
+      isAdminAuthenticated: loadedIsAdminAuthed,
+      isHiderAuthenticated: loadedIsHiderAuthed,
+      isSeekerAuthenticated: loadedIsSeekerAuthed,
+    }));
   }, []);
 
 
@@ -311,7 +348,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         cursesUsed: (prev.currentRound.hidingTeam.cursesUsed || 0) + 1,
       } : null;
 
-      if (!newCurrentRoundHidingTeam) return prev; // Should not happen if validation passed
+      if (!newCurrentRoundHidingTeam) return prev; 
 
       const newCurrentRound = {
         ...prev.currentRound,
@@ -364,7 +401,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         },
       };
     });
-    toast({ title: "Curse Cleared", description: "The active curse has been cleared." });
+    toast({ title: "Curse Cleared/Ended", description: "The active curse is no longer in effect." });
   }, []);
 
  const seekerCompletesCurseAction = useCallback((photoFile?: File) => {
@@ -387,18 +424,12 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
           },
         };
       } else if (curseDetails.requiresSeekerAction === 'confirmation') {
-        // For confirmation, curse is cleared immediately by seeker
-        return {
-          ...prev,
-          currentRound: {
-            ...prev.currentRound,
-            activeCurse: null, // Clear the curse
-          },
-        };
+        clearActiveCurse(); // Call the existing clear function
+        return prev; // clearActiveCurse will update state, so return prev here to avoid double update
       }
-      return prev; // No change if conditions not met
+      return prev; 
     });
-  }, []);
+  }, [clearActiveCurse]); // Add clearActiveCurse to dependency array
 
   const hiderAcknowledgesSeekerPhoto = useCallback(() => {
     setGameState(prev => {
@@ -406,15 +437,73 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         toast({ title: "Error", description: "No seeker photo to acknowledge or no active curse.", variant: "destructive" });
         return prev;
       }
-      toast({ title: "Curse Resolved by Hider", description: "Seeker's photo acknowledged. Curse ended." });
-      return { // Return new state
-        ...prev,
-        currentRound: {
-          ...prev.currentRound,
-          activeCurse: null, // Clear the curse
-        },
-      };
+      clearActiveCurse(); // Call the existing clear function
+      return prev; // clearActiveCurse will update state
     });
+  }, [clearActiveCurse]); // Add clearActiveCurse to dependency array
+
+  // PIN and Auth Logic
+  const setAdminPin = useCallback((pin: string) => {
+    setGameState(prev => ({ ...prev, adminPin: pin }));
+    localStorage.setItem('adminPin_mtrGame', pin);
+    toast({ title: "Admin PIN Set", description: "Admin access PIN has been updated." });
+  }, []);
+
+  const setHiderPin = useCallback((pin: string) => {
+    setGameState(prev => ({ ...prev, hiderPin: pin }));
+    localStorage.setItem('hiderPin_mtrGame', pin);
+    toast({ title: "Hider PIN Set", description: "Hider panel access PIN has been updated." });
+  }, []);
+
+  const setSeekerPin = useCallback((pin: string) => {
+    setGameState(prev => ({ ...prev, seekerPin: pin }));
+    localStorage.setItem('seekerPin_mtrGame', pin);
+    toast({ title: "Seeker PIN Set", description: "Seeker panel access PIN has been updated." });
+  }, []);
+
+  const authenticateAdmin = useCallback((enteredPin: string): boolean => {
+    if (gameState.adminPin === enteredPin) {
+      setGameState(prev => ({ ...prev, isAdminAuthenticated: true }));
+      localStorage.setItem('isAdminAuthenticated_mtrGame', 'true');
+      return true;
+    }
+    return false;
+  }, [gameState.adminPin]);
+
+  const authenticateHider = useCallback((enteredPin: string): boolean => {
+    if (gameState.hiderPin === enteredPin) {
+      setGameState(prev => ({ ...prev, isHiderAuthenticated: true }));
+      localStorage.setItem('isHiderAuthenticated_mtrGame', 'true');
+      return true;
+    }
+    return false;
+  }, [gameState.hiderPin]);
+
+  const authenticateSeeker = useCallback((enteredPin: string): boolean => {
+    if (gameState.seekerPin === enteredPin) {
+      setGameState(prev => ({ ...prev, isSeekerAuthenticated: true }));
+      localStorage.setItem('isSeekerAuthenticated_mtrGame', 'true');
+      return true;
+    }
+    return false;
+  }, [gameState.seekerPin]);
+
+  const logoutAdmin = useCallback(() => {
+    setGameState(prev => ({ ...prev, isAdminAuthenticated: false }));
+    localStorage.removeItem('isAdminAuthenticated_mtrGame');
+    toast({ title: "Admin Logged Out", description: "Admin panel access has been revoked for this session." });
+  }, []);
+  
+  const logoutHider = useCallback(() => {
+    setGameState(prev => ({ ...prev, isHiderAuthenticated: false }));
+    localStorage.removeItem('isHiderAuthenticated_mtrGame');
+    toast({ title: "Hider Logged Out", description: "Hider panel access has been revoked for this session." });
+  }, []);
+
+  const logoutSeeker = useCallback(() => {
+    setGameState(prev => ({ ...prev, isSeekerAuthenticated: false }));
+    localStorage.removeItem('isSeekerAuthenticated_mtrGame');
+    toast({ title: "Seeker Logged Out", description: "Seeker panel access has been revoked for this session." });
   }, []);
 
 
@@ -442,9 +531,17 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       clearActiveCurse,
       seekerCompletesCurseAction,
       hiderAcknowledgesSeekerPhoto,
+      setAdminPin,
+      setHiderPin,
+      setSeekerPin,
+      authenticateAdmin,
+      authenticateHider,
+      authenticateSeeker,
+      logoutAdmin,
+      logoutHider,
+      logoutSeeker,
     }}>
       {children}
     </GameContext.Provider>
   );
 };
-
