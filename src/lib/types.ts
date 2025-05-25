@@ -21,8 +21,8 @@ export interface QuestionOption {
   id: string;
   name: string;
   category: QuestionCategory;
-  cost: number; // Cost for seeker (will be 0 as they have unlimited)
-  hiderCoinsEarned: number; // Coins hider earns for this question
+  cost: number; 
+  hiderCoinsEarned: number;
   description: string;
   seekerPrompt?: string;
   disabledCondition?: (gameState: GameState, team: Team) => boolean;
@@ -48,12 +48,24 @@ export interface Challenge {
 
 export type CurseDiceOutcome = 1 | 2 | 3 | 4 | 5 | 6;
 
-export interface Curse {
-  id: string;
+export interface CurseRule {
+  number: number;
   name: string;
   description: string;
-  effect: (gameState: GameState, seekingTeam: Team) => void;
-  icon?: React.ElementType;
+  effect: string;
+  icon: React.ElementType;
+  durationMinutes?: number;
+  requiresSeekerAction?: 'photo' | 'confirmation';
+  requiresHiderTextInput?: boolean; // Added for Zoologist type curses
+  // hidesHiderPhotoInput?: boolean; // Not used in this iteration
+  // hidesSeekerPhotoInput?: boolean; // Not used, handled by requiresSeekerAction: 'photo'
+}
+
+
+export interface ActiveCurseInfo {
+  curseId: number; // The number rolled, links to CURSE_DICE_OPTIONS
+  startTime: Date;
+  hiderInputText?: string; // For Zoologist category or similar text from hider
 }
 
 export interface GameRound {
@@ -65,10 +77,7 @@ export interface GameRound {
   endTime?: Date;
   status: "pending" | "hiding-phase" | "seeking-phase" | "completed";
   askedQuestions: AskedQuestion[];
-  activeCurse: {
-    curseId: number; // The number rolled, links to CURSE_DICE_OPTIONS
-    startTime: Date;
-  } | null;
+  activeCurse: ActiveCurseInfo | null;
 }
 
 export interface GameState {

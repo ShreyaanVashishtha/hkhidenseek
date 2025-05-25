@@ -1,7 +1,7 @@
 
 "use client";
 
-import type { GameState, Player, Team, GameRound, TeamRole, AskedQuestion, QuestionOption } from '@/lib/types';
+import type { GameState, Player, Team, GameRound, TeamRole, AskedQuestion, QuestionOption, ActiveCurseInfo, CurseRule } from '@/lib/types';
 import { MTR_MAP_PLACEHOLDER_URL, INITIAL_COINS_HIDER_START, QUESTION_OPTIONS, CURSE_DICE_OPTIONS, MAX_CURSES_PER_ROUND } from '@/lib/constants';
 import React, { createContext, useState, useCallback, ReactNode, useEffect } from 'react';
 import { toast } from '@/hooks/use-toast';
@@ -24,8 +24,10 @@ interface GameContextType extends GameState {
   isMobile: boolean;
   askQuestion: (question: AskedQuestion) => void;
   answerQuestion: (questionId: string, response: string | File) => void;
-  activateCurse: (hiderTeamId: string, rolledCurseNumber: number) => void;
+  activateCurse: (hiderTeamId: string, rolledCurseNumber: number, hiderInputText?: string) => void;
+  recordCurseUsed: (hiderTeamId: string) => void;
   clearActiveCurse: () => void;
+  seekerCompletesCurseAction: () => void;
 }
 
 const defaultGameState: GameState = {
@@ -102,7 +104,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     setGameState(prev => ({
       ...prev,
       teams: prev.teams.map(team =>
-        team.id === teamId ? { ...team, isHiding, isSeeking, coins: isHiding ? (team.coins || INITIAL_COINS_HIDER_START) : 0 } : team
+        team.id === teamId ? { ...team, isHiding, isSeeking, coins: isHiding ? (team.coins || INITIAL_COINS_HIDER_START) : (isSeeking ? 0 : team.coins) } : team
       ),
     }));
   }, []);
@@ -111,8 +113,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     setGameState(prev => {
       const teamsWithRoundResets = prev.teams.map(t => ({
         ...t,
-        cursesUsed: t.isHiding ? 0 : t.cursesUsed, // Reset curses for new hider
-        coins: t.isSeeking ? 0 : (t.isHiding ? (t.coins || INITIAL_COINS_HIDER_START) : t.coins), // Seekers 0, hiders keep/start fresh
+        cursesUsed: t.isHiding ? 0 : t.cursesUsed,
+        coins: t.isSeeking ? 0 : (t.isHiding ? (t.coins || INITIAL_COINS_HIDER_START) : t.coins),
       }));
 
       const hidingTeamForRound = teamsWithRoundResets.find(t => t.isHiding);
@@ -126,7 +128,6 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         toast?.({ title: "Cannot Start Round", description: "At least one seeking team must be designated.", variant: "destructive" });
         return prev;
       }
-
 
       const roundStartTime = new Date();
       const newRound: GameRound = {
@@ -170,7 +171,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       const finishedRound: GameRound = { ...prev.currentRound, endTime: new Date(), status: 'completed' };
       
       const updatedTeams = prev.teams.map(team => {
-        if (team.id === finishedRound.hidingTeam?.id && finishedRound.phaseStartTime && finishedRound.status === 'seeking-phase') { // only calculate if seeking phase started
+        if (team.id === finishedRound.hidingTeam?.id && finishedRound.phaseStartTime && finishedRound.status === 'seeking-phase') { 
           const hideEndTime = finishedRound.endTime || new Date();
           const roundHidingDuration = Math.floor((hideEndTime.getTime() - new Date(finishedRound.phaseStartTime).getTime()) / 1000);
           if (roundHidingDuration > team.hidingTimeSeconds) {
@@ -220,11 +221,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
                     coins: operation === 'add' ? currentHidingTeamCoins + amount : Math.max(0, currentHidingTeamCoins - amount)
                 };
             }
-             // Seeking teams coins are not managed this way anymore, but keep structure if needed later
             newCurrentRound.seekingTeams = newCurrentRound.seekingTeams.map(st => {
                 if (st.id === teamId) {
-                    // This part is less relevant now that seekers have "unlimited" coins for questions
-                    // but if they had other coin mechanics, it would be here.
                     const currentSeekingTeamCoins = st.coins || 0;
                     return {
                         ...st,
@@ -306,40 +304,57 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     });
   }, []);
 
-  const activateCurse = useCallback((hiderTeamId: string, rolledCurseNumber: number) => {
+  const recordCurseUsed = useCallback((hiderTeamId: string) => {
     setGameState(prev => {
       if (!prev.currentRound || !prev.currentRound.hidingTeam || prev.currentRound.hidingTeam.id !== hiderTeamId) {
-        toast({title: "Error", description: "Cannot activate curse. Hiding team mismatch or no active round.", variant: "destructive"})
         return prev;
       }
-      
-      if ((prev.currentRound.hidingTeam.cursesUsed || 0) >= MAX_CURSES_PER_ROUND) {
-        toast({title: "Max Curses", description: "Maximum curses already used for this round.", variant: "destructive"})
-        return prev;
-      }
-
       const newTeams = prev.teams.map(team => {
         if (team.id === hiderTeamId) {
           return { ...team, cursesUsed: (team.cursesUsed || 0) + 1 };
         }
         return team;
       });
-
       const newCurrentRound = {
         ...prev.currentRound,
         hidingTeam: {
           ...prev.currentRound.hidingTeam,
           cursesUsed: (prev.currentRound.hidingTeam.cursesUsed || 0) + 1,
         },
-        activeCurse: {
-          curseId: rolledCurseNumber,
-          startTime: new Date(),
-        }
+      };
+      return {
+        ...prev,
+        teams: newTeams,
+        currentRound: newCurrentRound,
+      };
+    });
+  }, []);
+
+  const activateCurse = useCallback((hiderTeamId: string, rolledCurseNumber: number, hiderInputText?: string) => {
+    setGameState(prev => {
+      if (!prev.currentRound || !prev.currentRound.hidingTeam || prev.currentRound.hidingTeam.id !== hiderTeamId) {
+        toast({title: "Error", description: "Cannot activate curse. Hiding team mismatch or no active round.", variant: "destructive"})
+        return prev;
+      }
+      
+      // CursesUsed is now handled by recordCurseUsed, called separately by Hider page after input if needed.
+      // Ensure we don't exceed MAX_CURSES_PER_ROUND before calling activateCurse.
+
+      const activeCurseInfo: ActiveCurseInfo = {
+        curseId: rolledCurseNumber,
+        startTime: new Date(),
+      };
+      if (hiderInputText) {
+        activeCurseInfo.hiderInputText = hiderInputText;
+      }
+
+      const newCurrentRound = {
+        ...prev.currentRound,
+        activeCurse: activeCurseInfo
       };
       
       return {
         ...prev,
-        teams: newTeams,
         currentRound: newCurrentRound,
       };
     });
@@ -356,6 +371,13 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         },
       };
     });
+  }, []);
+
+  const seekerCompletesCurseAction = useCallback(() => {
+    // For now, this just clears the curse.
+    // Could be expanded later if seeker actions need to affect game state beyond clearing.
+    clearActiveCurse();
+    toast({title: "Curse Resolved", description: "Seeker action completed."})
   }, []);
 
 
@@ -379,7 +401,9 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       askQuestion,
       answerQuestion,
       activateCurse,
+      recordCurseUsed,
       clearActiveCurse,
+      seekerCompletesCurseAction,
     }}>
       {children}
     </GameContext.Provider>

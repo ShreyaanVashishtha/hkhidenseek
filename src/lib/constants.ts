@@ -1,5 +1,5 @@
 
-import type { QuestionOption } from '@/lib/types';
+import type { QuestionOption, CurseRule } from '@/lib/types';
 import { MapPin, Target, GitCompareArrows, Camera, ScanLine, ShieldAlert, Citrus, Footprints, Car, Route, Bird, Home, ShieldCheck, Search, Eye, ScrollText, Trophy } from 'lucide-react';
 
 export const GAME_TITLE = "MTR Hide and Seek";
@@ -89,13 +89,13 @@ export const QUESTION_OPTIONS: QuestionOption[] = [
   { id: 'q_scan', name: 'Scan', category: 'Scan', cost: 0, hiderCoinsEarned: 20, description: "Ask 'Are you in [specific region]?' (1 per 30 mins). Truthful response within 2 mins.", seekerPrompt: "e.g., Kowloon, Island Line, Southern District.", icon: ScanLine }
 ];
 
-export const CURSE_DICE_OPTIONS: Array<{ number: number; name: string; description: string; effect: string; icon: React.ElementType; durationMinutes?: number }> = [
-  { number: 1, name: "William Tell Curse", description: "Seekers must knock an apple off their partner's head from 3m.", effect: "Seekers must perform the William Tell task.", icon: ShieldAlert },
-  { number: 2, name: "Curse of the Lemon Phylactery", description: "Seekers must find and affix a lemon. Lost lemon = +30 mins for hider.", effect: "Seekers must find and carry lemons.", icon: Citrus },
+export const CURSE_DICE_OPTIONS: CurseRule[] = [
+  { number: 1, name: "William Tell Curse", description: "Seekers must knock an apple off their partner's head from 3m.", effect: "Seekers must perform the William Tell task.", icon: ShieldAlert, requiresSeekerAction: 'confirmation' },
+  { number: 2, name: "Curse of the Lemon Phylactery", description: "Seekers must find and affix a lemon. Lost lemon = +30 mins for hider.", effect: "Seekers must find and carry lemons.", icon: Citrus, requiresSeekerAction: 'confirmation' },
   { number: 3, name: "Curse of the Gambler's Feet", description: "For 10 mins, seekers roll die for steps.", effect: "Seekers movement restricted by die rolls.", icon: Footprints, durationMinutes: 10 },
-  { number: 4, name: "Curse of the Luxury Car", description: "Hider photos car. Seekers must photo more expensive car.", effect: "Seekers must find and photograph a more expensive car.", icon: Car },
+  { number: 4, name: "Curse of the Luxury Car", description: "Hider takes/shows a photo of a car. Seekers must find and photograph a car they believe is more expensive.", effect: "Seekers must find and photograph a more expensive car.", icon: Car, requiresSeekerAction: 'photo' },
   { number: 5, name: "Curse of the Right Turn", description: "For 15 mins, seekers only turn right. Dead end allows 180.", effect: "Seekers movement restricted to right turns.", icon: Route, durationMinutes: 15 },
-  { number: 6, name: "Curse of the Zoologist", description: "Hider photos wild animal. Seekers must photo same category.", effect: "Seekers must find and photograph a similar wild animal.", icon: Bird }
+  { number: 6, name: "Curse of the Zoologist", description: "Hider specifies an animal category (e.g., bird, insect, mammal). Seekers must photograph a wild animal of that category.", effect: "Seekers must find and photograph a similar wild animal.", icon: Bird, requiresSeekerAction: 'photo', requiresHiderTextInput: true }
 ];
 
 export const INITIAL_COINS_HIDER_START = 0;

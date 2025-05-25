@@ -7,15 +7,16 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useGameContext } from "@/hooks/useGameContext";
-import type { Challenge, AskedQuestion, QuestionOption as QuestionOptionType, Team } from "@/lib/types";
+import type { Challenge, AskedQuestion, QuestionOption as QuestionOptionType, Team, CurseRule } from "@/lib/types";
 import { QUESTION_OPTIONS, CURSE_DICE_OPTIONS, CHALLENGE_PENALTY_MINUTES, HIDING_PHASE_DURATION_MINUTES, SEEKING_PHASE_DURATION_MINUTES } from "@/lib/constants";
 import { PageHeader } from "@/components/PageHeader";
 import { TimerDisplay } from "@/components/game/TimerDisplay";
 import { VetoConsequenceModal } from "@/components/game/VetoConsequenceModal";
 import { useToast } from '@/hooks/use-toast';
-import { Search, ShieldQuestion, Send, ThumbsUp, ThumbsDown, ListChecks, Zap } from "lucide-react"; // Added Zap for curse icon
+import { Search, ShieldQuestion, Send, ThumbsUp, ThumbsDown, ListChecks, Zap, Upload, CheckSquare } from "lucide-react";
 import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface PhotoResponseDisplayProps {
@@ -56,9 +57,72 @@ const PhotoResponseDisplay: React.FC<PhotoResponseDisplayProps> = ({ file }) => 
   );
 };
 
+interface SeekerCursePhotoUploadProps {
+  onPhotoSubmit: (file: File) => void; // Callback when photo is submitted
+}
+
+const SeekerCursePhotoUpload: React.FC<SeekerCursePhotoUploadProps> = ({ onPhotoSubmit }) => {
+  const [cursePhoto, setCursePhoto] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const { toast } = useToast();
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      setCursePhoto(file);
+      const objectUrl = URL.createObjectURL(file);
+      setPreviewUrl(objectUrl);
+    } else {
+      setCursePhoto(null);
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(null);
+    }
+  };
+
+  const handleSubmit = () => {
+    if (cursePhoto) {
+      onPhotoSubmit(cursePhoto);
+      toast({ title: "Photo Submitted for Curse", description: "Your photo has been submitted to resolve the curse." });
+      setCursePhoto(null); // Clear after submit
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(null);
+    } else {
+      toast({ title: "No Photo Selected", description: "Please select a photo to submit.", variant: "destructive" });
+    }
+  };
+  
+  useEffect(() => {
+    // Cleanup object URL on unmount
+    return () => {
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [previewUrl]);
+
+
+  return (
+    <div className="space-y-3 mt-3">
+      <Label htmlFor="seeker-curse-photo">Upload Photo for Curse Task:</Label>
+      <Input id="seeker-curse-photo" type="file" accept="image/*" onChange={handleFileChange} 
+        className="file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/20 file:text-primary hover:file:bg-primary/30"
+      />
+      {previewUrl && (
+        <div className="mt-2">
+          <p className="text-xs text-muted-foreground mb-1">Preview:</p>
+          <Image src={previewUrl} alt="Seeker curse photo preview" width={200} height={150} className="rounded-md border object-contain" />
+        </div>
+      )}
+      <Button onClick={handleSubmit} disabled={!cursePhoto} className="w-full flex items-center gap-2">
+        <Upload className="h-4 w-4" /> Submit Photo & Resolve Curse
+      </Button>
+    </div>
+  );
+};
+
 
 export default function SeekerPage() {
-  const { teams, currentRound, startSeekingPhase, askQuestion, clearActiveCurse } = useGameContext();
+  const { teams, currentRound, startSeekingPhase, askQuestion, clearActiveCurse, seekerCompletesCurseAction } = useGameContext();
   const { toast } = useToast();
 
   const [myTeam, setMyTeam] = useState<Team | undefined>(undefined);
@@ -125,6 +189,18 @@ export default function SeekerPage() {
         toast({ title: "Penalty Active", description: "Cannot ask questions during a penalty.", variant: "destructive"});
         return;
     }
+     if (currentRound?.activeCurse) {
+        const curseDetails = CURSE_DICE_OPTIONS.find(c => c.number === currentRound.activeCurse!.curseId);
+        if (curseDetails?.requiresSeekerAction === 'photo' && curseDetails.name === "Curse of the Zoologist") {
+             toast({ title: "Curse Active", description: "You must resolve the Curse of the Zoologist (upload photo) before asking another question.", variant: "destructive"});
+            return;
+        }
+         if (curseDetails?.requiresSeekerAction === 'photo' && curseDetails.name === "Curse of the Luxury Car") {
+             toast({ title: "Curse Active", description: "You must resolve the Curse of the Luxury Car (upload photo) before asking another question.", variant: "destructive"});
+            return;
+        }
+    }
+
 
     const newQuestion: AskedQuestion = {
       id: `asked-${Date.now()}`,
@@ -139,13 +215,13 @@ export default function SeekerPage() {
     toast({ title: "Question Asked!", description: `${selectedQuestionType.name} question sent.` });
     
     setQuestionText("");
-    // Keep selectedQuestionType for convenience if asking multiple similar questions
   };
   
   const gamePhase = currentRound?.status || 'pending';
   const isHidingPhase = gamePhase === 'hiding-phase';
   const isSeekingPhase = gamePhase === 'seeking-phase';
   const displayedAskedQuestions = currentRound?.askedQuestions || [];
+  
   const activeCurseDetails = currentRound?.activeCurse 
     ? CURSE_DICE_OPTIONS.find(c => c.number === currentRound.activeCurse!.curseId)
     : null;
@@ -243,24 +319,39 @@ export default function SeekerPage() {
                 </CardTitle>
                 <CardDescription className="text-destructive/90">
                   {activeCurseDetails.description} <br />
+                  {activeCurseDetails.name === "Curse of the Zoologist" && currentRound.activeCurse.hiderInputText && (
+                    <span className="font-semibold">Hider's animal category: "{currentRound.activeCurse.hiderInputText}"</span>
+                  )}
+                  <br/>
                   <strong>Effect on Seekers:</strong> {activeCurseDetails.effect}
                 </CardDescription>
               </CardHeader>
-              {activeCurseDetails.durationMinutes && currentRound.activeCurse.startTime && (
-                <CardContent>
+              <CardContent>
+                {activeCurseDetails.durationMinutes && currentRound.activeCurse.startTime ? (
                   <TimerDisplay
                     title="Curse Time Remaining"
                     durationMinutes={activeCurseDetails.durationMinutes}
                     phaseStartTime={new Date(currentRound.activeCurse.startTime)}
-                    isActive={true} // Curse timer is active if displayed
+                    isActive={true} 
                     onTimerEnd={() => {
                       toast({ title: "Curse Expired", description: `${activeCurseDetails.name} is no longer active.` });
                       clearActiveCurse();
                     }}
                     className="text-sm"
                   />
-                </CardContent>
-              )}
+                ) : activeCurseDetails.requiresSeekerAction === 'confirmation' ? (
+                  <Button onClick={() => seekerCompletesCurseAction()} className="w-full flex items-center gap-2 mt-2">
+                     <CheckSquare className="h-4 w-4" /> Mark Curse Resolved
+                  </Button>
+                ) : activeCurseDetails.requiresSeekerAction === 'photo' ? (
+                   <SeekerCursePhotoUpload 
+                     onPhotoSubmit={(file) => {
+                       // For now, submitting photo just clears the curse action
+                       seekerCompletesCurseAction();
+                     }}
+                   />
+                ) : null }
+              </CardContent>
             </Card>
           )}
 
@@ -310,7 +401,7 @@ export default function SeekerPage() {
                   <SelectContent>
                     {QUESTION_OPTIONS.map(q => (
                       <SelectItem key={q.id} value={q.id} disabled={q.disabledCondition?.(null as any, myTeam!)}>
-                        {q.name} {q.disabledCondition?.(null as any, myTeam!) ? "(Disabled)" : `(Hiders earn ${q.hiderCoinsEarned})`}
+                        {q.name} (Hiders earn {q.hiderCoinsEarned})
                       </SelectItem>
                     ))}
                   </SelectContent>
