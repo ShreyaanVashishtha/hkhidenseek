@@ -21,8 +21,8 @@ export interface QuestionOption {
   id: string;
   name: string;
   category: QuestionCategory;
-  cost: number;
-  hiderCoinsEarned: number;
+  cost: number; // Cost for seeker (currently 0)
+  hiderCoinsEarned: number; // Coins hider earns when this question is asked
   description: string;
   seekerPrompt?: string;
   disabledCondition?: (gameState: GameState, team: Team) => boolean;
@@ -34,7 +34,7 @@ export interface AskedQuestion {
   questionOptionId: string;
   category: QuestionCategory;
   text: string;
-  response?: string | File;
+  response?: string; // Can be text response or URL for a photo
   isTruthful?: boolean;
   timestamp: Date;
   askingTeamId: string;
@@ -64,7 +64,7 @@ export interface ActiveCurseInfo {
   curseId: number;
   startTime: Date;
   hiderInputText?: string;
-  seekerSubmittedPhoto?: File;
+  seekerSubmittedPhoto?: File; // Locally stored File object for seeker's submission for a curse
   resolutionStatus?: 'pending_seeker_action' | 'pending_hider_acknowledgement' | 'resolved';
 }
 
@@ -86,10 +86,9 @@ export interface GameState {
   currentRound: GameRound | null;
   gameHistory: GameRound[];
   mtrMapUrl?: string;
-  adminPin?: string; // PINs are global settings, set by admin
+  adminPin?: string; 
   hiderPin?: string;
   seekerPin?: string;
-  // Authentication statuses are NOT part of the shared state
 }
 
 export type TeamRole = "hider" | "seeker" | "admin" | "spectator";

@@ -22,17 +22,27 @@ import { Separator } from '@/components/ui/separator';
 import { PinProtectPage } from '@/components/auth/PinProtectPage';
 
 interface SeekerPhotoDisplayProps {
-  file: File;
+  // This component is now a bit misleading as seeker photos for curses are handled locally by seeker
+  // and then just acknowledged by hider. If hider needs to see it, we'd need a URL from Supabase Storage.
+  // For now, let's assume if seekerSubmittedPhoto is a File, it's from a local process,
+  // but ideally, it would be a URL if we were to show it.
+  // This component will primarily be for showing the HIDER's photo response, not seeker's curse photo.
+  // For seeker's curse photo, we'll rely on its presence in `currentRound.activeCurse.seekerSubmittedPhoto`
+  // and potentially display a simple acknowledgment UI if that object is a File.
+  file: File; // Or string if it's a URL
 }
 
 const SeekerPhotoDisplay: React.FC<SeekerPhotoDisplayProps> = ({ file }) => {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    if (file) {
+    if (file instanceof File) {
       const objectUrl = URL.createObjectURL(file);
       setImageUrl(objectUrl);
       return () => URL.revokeObjectURL(objectUrl);
+    } else if (typeof file === 'string') {
+      // If 'file' is already a URL string (from Supabase storage)
+      setImageUrl(file);
     }
   }, [file]);
 
@@ -41,7 +51,7 @@ const SeekerPhotoDisplay: React.FC<SeekerPhotoDisplayProps> = ({ file }) => {
   return (
     <div className="mt-2">
       <p className="text-sm font-medium">Seeker's Submitted Photo for Curse Resolution:</p>
-      <Image src={imageUrl} alt="Seeker's photo for curse" width={200} height={150} className="rounded-md border object-contain" />
+      <Image src={imageUrl} alt="Seeker's photo for curse" width={200} height={150} className="rounded-md border object-contain" data-ai-hint="selfie person" />
     </div>
   );
 };
@@ -74,49 +84,43 @@ function HiderPageContent() {
 
   useEffect(() => {
     const currentHidingTeamIdInRound = currentRound?.hidingTeam?.id;
+    let determinedTeam: Team | undefined = undefined;
 
-    // Update myTeam state
     if (currentHidingTeamIdInRound) {
-      const teamFromContext = teams.find(t => t.id === currentHidingTeamIdInRound);
-      if (teamFromContext?.id !== myTeam?.id) {
-        setMyTeam(teamFromContext);
-      }
+      determinedTeam = teams.find(t => t.id === currentHidingTeamIdInRound);
     } else {
-      const generalHidingTeam = teams.find(t => t.isHiding);
-      if (generalHidingTeam?.id !== myTeam?.id) {
-        setMyTeam(generalHidingTeam);
-      } else if (!generalHidingTeam && myTeam) {
-        setMyTeam(undefined);
-      }
+      determinedTeam = teams.find(t => t.isHiding);
+    }
+
+    if (determinedTeam?.id !== myTeam?.id) {
+      setMyTeam(determinedTeam);
+    } else if (!determinedTeam && myTeam) {
+      setMyTeam(undefined);
     }
     
     const globallyActiveCurseInfo = currentRound?.activeCurse;
 
     if (globallyActiveCurseInfo && globallyActiveCurseInfo.resolutionStatus !== 'resolved') {
-      // There is a globally active curse. Display it.
       const globalCurseDetails = CURSE_DICE_OPTIONS.find(c => c.number === globallyActiveCurseInfo.curseId);
       if (globalCurseDetails) {
-        // If local rolledCurse isn't already showing this global curse, or if it's a different one, update it.
         if (!rolledCurse || rolledCurse.number !== globalCurseDetails.number) {
-          setRolledCurse(globalCurseDetails);
+          setRolledCurse(globalCurseDetails); // Display the globally active curse
+          setHasPendingRoll(false); // If a global curse is active, no local roll is pending
         }
         setHiderCurseInputText(globallyActiveCurseInfo.hiderInputText || "");
       }
     } else {
-      // No globally active curse.
-      // If `hasPendingRoll` is true, user is in "buy" phase. `rolledCurse` should be null (set by handleBuyCurseDice).
-      // If `hasPendingRoll` is false AND `rolledCurse` is non-null, it means a local roll is pending activation. We should *keep* it displayed.
-      // If `hasPendingRoll` is false AND `rolledCurse` IS null (e.g., after activation, or initial state), clear related input text.
-      if (!hasPendingRoll && !rolledCurse) {
-        setHiderCurseInputText("");
+      // If no global curse is active, and we are not in a local pending roll state, clear input.
+      // Do NOT clear `rolledCurse` here if it's a locally pending roll that hasn't been activated yet.
+      // `rolledCurse` will be cleared upon activation or if user buys dice again.
+      if (!hasPendingRoll && !rolledCurse) { // only clear input if no local roll is pending display
+          setHiderCurseInputText("");
       }
-      // If `rolledCurse` *is* set (a local roll is pending) and there's no global curse, DO NOT clear `rolledCurse` here.
-      // It will be cleared by `handleActivateRolledCurse` or `handleBuyCurseDice`.
     }
-  }, [teams, currentRound, myTeam, hasPendingRoll, rolledCurse]);
+  }, [teams, currentRound, myTeam]); // Removed `rolledCurse` and `hasPendingRoll`
 
 
-  const handleSendResponse = () => {
+  const handleSendResponse = async () => {
     if (!selectedQuestionToAnswer || !myTeam) return;
 
     let finalResponse: string | File = "";
@@ -131,7 +135,7 @@ function HiderPageContent() {
         toast({ title: "Error", description: "Please upload a photo.", variant: "destructive" });
         return;
       }
-      finalResponse = responsePhoto;
+      finalResponse = responsePhoto; // This will be a File object
     } else { // Relative
       if (!responseText.trim()) {
         toast({ title: "Error", description: "Please enter your response.", variant: "destructive" });
@@ -140,8 +144,11 @@ function HiderPageContent() {
       finalResponse = responseText;
     }
 
-    answerQuestion(selectedQuestionToAnswer.id, finalResponse);
-    toast({ title: "Response Sent!", description: `Your response to "${selectedQuestionToAnswer.text.substring(0,20)}..." has been sent.` });
+    await answerQuestion(selectedQuestionToAnswer.id, finalResponse); 
+    // Toast for photo upload is now handled in GameContext after successful Supabase upload
+    if (!(finalResponse instanceof File)) {
+        toast({ title: "Response Sent!", description: `Your response to "${selectedQuestionToAnswer.text.substring(0,20)}..." has been sent.` });
+    }
     
     setSelectedQuestionToAnswer(null);
     setResponseText("");
@@ -159,7 +166,6 @@ function HiderPageContent() {
       toast({ title: "Max Curses Used", description: `You have already used curse dice ${MAX_CURSES_PER_ROUND} times this round.`, variant: "destructive" });
       return;
     }
-    // Check if a curse is already globally active OR if a local roll is pending activation
     if ((currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved') || rolledCurse) { 
       toast({ title: "Roll Pending or Curse Active", description: "A dice roll is pending activation, or a curse is already globally active.", variant: "destructive" });
       return;
@@ -168,7 +174,7 @@ function HiderPageContent() {
     updateTeamCoins(myTeam.id, CURSE_DICE_COST, 'subtract');
     setHasPendingRoll(true);
     setRolledCurse(null); 
-    setHiderCurseInputText("");
+    setHiderCurseInputText(""); // Clear any previous input text
     toast({ title: "Curse Dice Purchased!", description: `-${CURSE_DICE_COST} coins. Roll the dice!` });
   };
 
@@ -191,6 +197,7 @@ function HiderPageContent() {
     if (curseDetails) {
         setRolledCurse(curseDetails); 
         setHasPendingRoll(false); 
+        setHiderCurseInputText(""); // Clear input text for the new roll
         toast({ title: "Dice Rolled!", description: `You got: ${curseDetails.name}. Confirm to activate.` });
     }
   };
@@ -200,7 +207,8 @@ function HiderPageContent() {
         toast({ title: "Activation Error", description: "No curse rolled or a curse is already active.", variant: "destructive" });
         return;
     }
-    if ((myTeam.cursesUsed || 0) >= MAX_CURSES_PER_ROUND) { // This check uses current cursesUsed, before incrementing for this one
+    // This check uses current cursesUsed, before incrementing for this one
+    if ((myTeam.cursesUsed || 0) >= MAX_CURSES_PER_ROUND) { 
       toast({ title: "Max Curses Used", description: `Cannot activate, max curses for this round reached.`, variant: "destructive" });
       return;
     }
@@ -422,7 +430,6 @@ function HiderPageContent() {
                 </Button>
             </CardContent>
             
-            {/* Section for newly rolled curse (before activation) */}
             {rolledCurse && !globallyActiveCurseInfo && ( 
                 <CardContent className="pt-4 space-y-3">
                   <Separator/>
@@ -455,7 +462,6 @@ function HiderPageContent() {
                 </CardContent>
             )}
 
-            {/* Section for globally active curse */}
             { displayedActiveCurseDetails && globallyActiveCurseInfo && ( 
                  <CardFooter className="pt-4 mt-2 border-t">
                     <div className="p-4 border rounded-md bg-primary/10 w-full space-y-2">
@@ -484,6 +490,7 @@ function HiderPageContent() {
 
                         {displayedActiveCurseDetails.requiresSeekerAction === 'photo' && globallyActiveCurseInfo.seekerSubmittedPhoto && globallyActiveCurseInfo.resolutionStatus === 'pending_hider_acknowledgement' && (
                           <div className="space-y-2 p-3 bg-background rounded-md border border-dashed">
+                             {/* Seeker's photo is a File object stored in activeCurse on context, if it's complex pass URL */}
                             <SeekerPhotoDisplay file={globallyActiveCurseInfo.seekerSubmittedPhoto} />
                             <Button onClick={handleHiderAcknowledgePhoto} className="w-full mt-2 flex items-center gap-2">
                               <CheckCircle className="h-4 w-4" /> Accept Seeker's Photo & End Curse
@@ -493,7 +500,7 @@ function HiderPageContent() {
                          {displayedActiveCurseDetails.requiresSeekerAction === 'photo' && !globallyActiveCurseInfo.seekerSubmittedPhoto && globallyActiveCurseInfo.resolutionStatus === 'pending_seeker_action' && (
                             <p className="text-sm text-muted-foreground italic">Waiting for seeker to submit photo for this curse...</p>
                         )}
-                         {globallyActiveCurseInfo.resolutionStatus === 'resolved' && ( // Should not happen if logic is correct
+                         {globallyActiveCurseInfo.resolutionStatus === 'resolved' && ( 
                             <p className="text-sm text-green-600 font-semibold">Curse has been resolved.</p>
                         )}
                     </div>
@@ -513,5 +520,3 @@ export default function HiderPage() {
     </PinProtectPage>
   );
 }
-
-    

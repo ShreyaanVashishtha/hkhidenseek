@@ -22,6 +22,12 @@ const nextConfig: NextConfig = {
         hostname: 'www.mtr.com.hk',
         port: '',
         pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'wikrlnhtnqrggkabmamu.supabase.co', // Added Supabase storage hostname
+        port: '',
+        pathname: '/**',
       }
     ],
   },

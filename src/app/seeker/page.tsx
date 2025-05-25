@@ -21,26 +21,10 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { PinProtectPage } from '@/components/auth/PinProtectPage';
 
 interface PhotoResponseDisplayProps {
-  file: File;
+  imageUrl: string; // Expect a URL string
 }
 
-const PhotoResponseDisplay: React.FC<PhotoResponseDisplayProps> = ({ file }) => {
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (file) {
-      const objectUrl = URL.createObjectURL(file);
-      setImageUrl(objectUrl);
-
-      return () => {
-        if (objectUrl) {
-          URL.revokeObjectURL(objectUrl);
-        }
-        setImageUrl(null); 
-      };
-    }
-  }, [file]);
-
+const PhotoResponseDisplay: React.FC<PhotoResponseDisplayProps> = ({ imageUrl }) => {
   if (!imageUrl) {
     return <p className="text-sm text-muted-foreground">Loading photo...</p>;
   }
@@ -53,6 +37,7 @@ const PhotoResponseDisplay: React.FC<PhotoResponseDisplayProps> = ({ file }) => 
         width={300} 
         height={225} 
         className="rounded-md border object-contain" 
+        data-ai-hint="response image"
       />
     </div>
   );
@@ -109,7 +94,7 @@ const SeekerCursePhotoUpload: React.FC<SeekerCursePhotoUploadProps> = ({ onPhoto
       {previewUrl && (
         <div className="mt-2">
           <p className="text-xs text-muted-foreground mb-1">Preview:</p>
-          <Image src={previewUrl} alt="Seeker curse photo preview" width={200} height={150} className="rounded-md border object-contain" />
+          <Image src={previewUrl} alt="Seeker curse photo preview" width={200} height={150} className="rounded-md border object-contain" data-ai-hint="curse photo" />
         </div>
       )}
       <Button onClick={handleSubmit} disabled={!cursePhoto || disabled} className="w-full flex items-center gap-2">
@@ -163,7 +148,7 @@ function SeekerPageContent() {
       description: currentChallengeDescription,
       status,
     };
-    setChallenges(prev => [challenge, ...prev]);
+    setChallenges(prev => [challenge, ...prev]); // Local state for challenge history
 
     if (status === "completed") {
       toast({ title: "Challenge Completed!", description: `Good job, ${myTeam.name}!` });
@@ -207,6 +192,7 @@ function SeekerPageContent() {
     toast({ title: "Question Asked!", description: `${selectedQuestionType.name} question sent. Hiders earn ${selectedQuestionType.hiderCoinsEarned} coins.` });
     
     setQuestionText("");
+    setSelectedQuestionType(undefined); // Reset selected question type
   };
   
   const gamePhase = currentRound?.status || 'pending';
@@ -336,11 +322,11 @@ function SeekerPageContent() {
                     isActive={currentRound.activeCurse.resolutionStatus === 'pending_seeker_action'}
                     onTimerEnd={() => {
                       toast({ title: "Curse Expired", description: `${activeCurseDetails.name} is no longer active.` });
-                      clearActiveCurse(); // Context function
+                      clearActiveCurse(); 
                     }}
                     className="text-sm"
                   />
-                  {activeCurseDetails.number === 3 && ( // Curse of the Gambler's Feet ID = 3
+                  {activeCurseDetails.number === 3 && ( 
                     <div className="mt-3">
                       <Button onClick={handleRollForGamblerSteps} className="w-full flex items-center gap-2">
                         <Dice6 className="h-4 w-4"/> Roll for Steps
@@ -418,7 +404,7 @@ function SeekerPageContent() {
                   <SelectTrigger id="question-type"><SelectValue placeholder="Select question type" /></SelectTrigger>
                   <SelectContent>
                     {QUESTION_OPTIONS.map(q => (
-                      <SelectItem key={q.id} value={q.id} disabled={q.disabledCondition?.(null as any, myTeam!)}>
+                      <SelectItem key={q.id} value={q.id}>
                         {q.name} (Hiders earn {q.hiderCoinsEarned})
                       </SelectItem>
                     ))}
@@ -461,10 +447,10 @@ function SeekerPageContent() {
                       {q.response && (
                         <div className="mt-1 text-sm text-accent-foreground bg-accent/20 p-2 rounded-md">
                           Hider Response: 
-                          {typeof q.response === 'string' 
-                            ? <span className="ml-1">{q.response}</span>
-                            : q.response instanceof File 
-                              ? <PhotoResponseDisplay file={q.response} /> 
+                          {q.category === "Photo" && typeof q.response === 'string' && q.response.startsWith('http')
+                            ? <PhotoResponseDisplay imageUrl={q.response} /> 
+                            : typeof q.response === 'string'
+                              ? <span className="ml-1">{q.response}</span>
                               : "Invalid response format"}
                         </div>
                       )}
