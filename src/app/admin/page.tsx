@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useGameContext } from "@/hooks/useGameContext";
 import type { Player, Team } from "@/lib/types";
 import { PageHeader } from "@/components/PageHeader";
-import { ShieldCheck, Users, UserPlus, Play, StopCircle, Shuffle, Trash2, Map } from "lucide-react";
+import { ShieldCheck, Users, UserPlus, Play, StopCircle, Shuffle, Trash2, Map, ClockForward } from "lucide-react";
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -26,6 +26,7 @@ export default function AdminPage() {
     updateTeamRole,
     currentRound,
     startNewRound,
+    startSeekingPhase, // Added this
     endCurrentRound,
     mtrMapUrl,
     setMtrMapUrl
@@ -104,7 +105,16 @@ export default function AdminPage() {
       return;
     }
     startNewRound();
-    toast({ title: "Round Started!", description: `Round ${currentRound ? currentRound.roundNumber + 1 : 1} has begun.` });
+    toast({ title: "Round Started!", description: `Round ${currentRound ? currentRound.roundNumber + 1 : 1} has begun. Hiding phase active.` });
+  };
+
+  const handleForceStartSeekingPhase = () => {
+    if (currentRound && currentRound.status === 'hiding-phase') {
+      startSeekingPhase();
+      toast({ title: "Seeking Phase Started!", description: "The seeking phase has been manually started." });
+    } else {
+      toast({ title: "Error", description: "Cannot start seeking phase. Ensure a round is active and in the hiding phase.", variant: "destructive" });
+    }
   };
   
   const handleEndRound = () => {
@@ -263,14 +273,37 @@ export default function AdminPage() {
         <CardHeader>
           <CardTitle>Round Management</CardTitle>
           <CardDescription>
-            {currentRound ? `Round ${currentRound.roundNumber} is ${currentRound.status}.` : "No active round."}
+            {currentRound ? `Round ${currentRound.roundNumber} is in ${currentRound.status}.` : "No active round."}
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex gap-4">
-          <Button onClick={handleStartRound} disabled={!!currentRound} className="flex items-center gap-2"><Play /> Start New Round</Button>
-          <Button onClick={handleEndRound} disabled={!currentRound} variant="destructive" className="flex items-center gap-2"><StopCircle /> End Current Round</Button>
+        <CardContent className="flex flex-wrap gap-4">
+          <Button 
+            onClick={handleStartRound} 
+            disabled={!!currentRound} 
+            className="flex items-center gap-2"
+          >
+            <Play /> Start New Round
+          </Button>
+          <Button 
+            onClick={handleForceStartSeekingPhase} 
+            disabled={!currentRound || currentRound?.status !== 'hiding-phase'} 
+            variant="outline"
+            className="flex items-center gap-2"
+          >
+            <ClockForward /> Force Start Seeking Phase
+          </Button>
+          <Button 
+            onClick={handleEndRound} 
+            disabled={!currentRound} 
+            variant="destructive" 
+            className="flex items-center gap-2"
+          >
+            <StopCircle /> End Current Round
+          </Button>
         </CardContent>
       </Card>
     </div>
   );
 }
+
+    
