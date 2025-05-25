@@ -10,13 +10,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useGameContext } from "@/hooks/useGameContext";
-import type { Challenge, AskedQuestion, QuestionOption as QuestionOptionType, Team, CurseRule } from "@/lib/types";
+import type { Challenge, AskedQuestion, QuestionOption as QuestionOptionType, Team, CurseRule, ActiveCurseInfo } from "@/lib/types";
 import { QUESTION_OPTIONS, CURSE_DICE_OPTIONS, CHALLENGE_PENALTY_MINUTES, HIDING_PHASE_DURATION_MINUTES, SEEKING_PHASE_DURATION_MINUTES } from "@/lib/constants";
 import { PageHeader } from "@/components/PageHeader";
 import { TimerDisplay } from "@/components/game/TimerDisplay";
 import { VetoConsequenceModal } from "@/components/game/VetoConsequenceModal";
 import { useToast } from '@/hooks/use-toast';
-import { Search, ShieldQuestion, Send, ThumbsUp, ThumbsDown, ListChecks, Zap, Upload, CheckSquare } from "lucide-react";
+import { Search, ShieldQuestion, Send, ThumbsUp, ThumbsDown, ListChecks, Zap, Upload, CheckSquare, AlertTriangle } from "lucide-react";
 import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface PhotoResponseDisplayProps {
@@ -58,10 +58,11 @@ const PhotoResponseDisplay: React.FC<PhotoResponseDisplayProps> = ({ file }) => 
 };
 
 interface SeekerCursePhotoUploadProps {
-  onPhotoSubmit: (file: File) => void; // Callback when photo is submitted
+  onPhotoSubmit: (file: File) => void; 
+  disabled?: boolean;
 }
 
-const SeekerCursePhotoUpload: React.FC<SeekerCursePhotoUploadProps> = ({ onPhotoSubmit }) => {
+const SeekerCursePhotoUpload: React.FC<SeekerCursePhotoUploadProps> = ({ onPhotoSubmit, disabled }) => {
   const [cursePhoto, setCursePhoto] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const { toast } = useToast();
@@ -82,17 +83,14 @@ const SeekerCursePhotoUpload: React.FC<SeekerCursePhotoUploadProps> = ({ onPhoto
   const handleSubmit = () => {
     if (cursePhoto) {
       onPhotoSubmit(cursePhoto);
-      toast({ title: "Photo Submitted for Curse", description: "Your photo has been submitted to resolve the curse." });
-      setCursePhoto(null); // Clear after submit
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-      setPreviewUrl(null);
+      toast({ title: "Photo Submitted for Curse", description: "Your photo has been submitted for hider review." });
+      // Do not clear photo here, let parent component manage its display state after submission
     } else {
       toast({ title: "No Photo Selected", description: "Please select a photo to submit.", variant: "destructive" });
     }
   };
   
   useEffect(() => {
-    // Cleanup object URL on unmount
     return () => {
       if (previewUrl) {
         URL.revokeObjectURL(previewUrl);
@@ -106,6 +104,7 @@ const SeekerCursePhotoUpload: React.FC<SeekerCursePhotoUploadProps> = ({ onPhoto
       <Label htmlFor="seeker-curse-photo">Upload Photo for Curse Task:</Label>
       <Input id="seeker-curse-photo" type="file" accept="image/*" onChange={handleFileChange} 
         className="file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/20 file:text-primary hover:file:bg-primary/30"
+        disabled={disabled}
       />
       {previewUrl && (
         <div className="mt-2">
@@ -113,8 +112,8 @@ const SeekerCursePhotoUpload: React.FC<SeekerCursePhotoUploadProps> = ({ onPhoto
           <Image src={previewUrl} alt="Seeker curse photo preview" width={200} height={150} className="rounded-md border object-contain" />
         </div>
       )}
-      <Button onClick={handleSubmit} disabled={!cursePhoto} className="w-full flex items-center gap-2">
-        <Upload className="h-4 w-4" /> Submit Photo & Resolve Curse
+      <Button onClick={handleSubmit} disabled={!cursePhoto || disabled} className="w-full flex items-center gap-2">
+        <Upload className="h-4 w-4" /> Submit Photo
       </Button>
     </div>
   );
@@ -139,12 +138,14 @@ export default function SeekerPage() {
 
   useEffect(() => {
     if (currentRound && currentRound.seekingTeams.length > 0) {
+        // Attempt to find a team from `teams` that matches an ID in `currentRound.seekingTeams` AND is marked as seeking
         const userTeam = teams.find(t => currentRound.seekingTeams.some(st => st.id === t.id) && t.isSeeking);
         setMyTeam(userTeam);
     } else if (teams.some(t => t.isSeeking)) {
+        // Fallback if currentRound isn't fully populated yet or seekingTeams is empty, but some team is marked as seeking
         setMyTeam(teams.find(t => t.isSeeking)); 
     } else {
-        setMyTeam(undefined);
+        setMyTeam(undefined); // No seeking team found
     }
   }, [teams, currentRound]);
 
@@ -167,7 +168,7 @@ export default function SeekerPage() {
 
     if (status === "completed") {
       toast({ title: "Challenge Completed!", description: `Good job, ${myTeam.name}!` });
-    } else {
+    } else { // failed or vetoed
       setIsPenaltyActive(true);
       const newPenaltyEndTime = new Date(Date.now() + CHALLENGE_PENALTY_MINUTES * 60 * 1000);
       setPenaltyEndTime(newPenaltyEndTime);
@@ -189,7 +190,7 @@ export default function SeekerPage() {
         toast({ title: "Penalty Active", description: "Cannot ask questions during a penalty.", variant: "destructive"});
         return;
     }
-    if (currentRound?.activeCurse) {
+    if (currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved') {
         toast({ title: "Curse Active", description: "Cannot ask questions while a curse is active. Resolve the curse first.", variant: "destructive"});
         return;
     }
@@ -205,9 +206,10 @@ export default function SeekerPage() {
     };
 
     askQuestion(newQuestion); 
-    toast({ title: "Question Asked!", description: `${selectedQuestionType.name} question sent.` });
+    toast({ title: "Question Asked!", description: `${selectedQuestionType.name} question sent. Hiders earn ${selectedQuestionType.hiderCoinsEarned} coins.` });
     
     setQuestionText("");
+    // setSelectedQuestionType(undefined); // Optionally reset selected type
   };
   
   const gamePhase = currentRound?.status || 'pending';
@@ -254,6 +256,8 @@ export default function SeekerPage() {
   const currentPhaseDuration = isHidingPhase ? HIDING_PHASE_DURATION_MINUTES : SEEKING_PHASE_DURATION_MINUTES;
   const timerTitle = isHidingPhase ? "Hiding Phase Ends In" : "Seeking Phase Time Left";
 
+  const isCurseActionDisabled = currentRound?.activeCurse?.resolutionStatus === 'pending_hider_acknowledgement';
+
   return (
     <div className="space-y-8">
       <PageHeader 
@@ -270,7 +274,7 @@ export default function SeekerPage() {
           isActive={isHidingPhase || isSeekingPhase}
           onTimerEnd={isHidingPhase ? () => {
             toast({ title: "Hiding Phase Over!", description: "Seeking phase has begun!" });
-            startSeekingPhase(); 
+            if(currentRound?.status === 'hiding-phase') startSeekingPhase(); 
           } : undefined}
           className="lg:col-span-1"
         />
@@ -303,7 +307,7 @@ export default function SeekerPage() {
 
       {isSeekingPhase && (
         <>
-          {activeCurseDetails && currentRound?.activeCurse && (
+          {activeCurseDetails && currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved' && (
             <Card className="border-destructive bg-destructive/10">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-destructive">
@@ -315,12 +319,17 @@ export default function SeekerPage() {
                   {activeCurseDetails.name === "Curse of the Zoologist" && currentRound.activeCurse.hiderInputText && (
                     <span className="font-semibold">Hider's animal category: "{currentRound.activeCurse.hiderInputText}"</span>
                   )}
+                   {activeCurseDetails.name === "Curse of the Luxury Car" && currentRound.activeCurse.hiderInputText && ( // Assuming hiderInputText might be used for car description
+                    <span className="font-semibold">Hider's car details: "{currentRound.activeCurse.hiderInputText}"</span>
+                  )}
                   <br/>
                   <strong>Effect on Seekers:</strong> {activeCurseDetails.effect}
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {activeCurseDetails.durationMinutes && currentRound.activeCurse.startTime ? (
+                {currentRound.activeCurse.resolutionStatus === 'pending_hider_acknowledgement' ? (
+                  <p className="font-semibold text-primary">Photo submitted. Awaiting hider review.</p>
+                ) : activeCurseDetails.durationMinutes && currentRound.activeCurse.startTime ? (
                   <TimerDisplay
                     title="Curse Time Remaining"
                     durationMinutes={activeCurseDetails.durationMinutes}
@@ -333,15 +342,13 @@ export default function SeekerPage() {
                     className="text-sm"
                   />
                 ) : activeCurseDetails.requiresSeekerAction === 'confirmation' ? (
-                  <Button onClick={() => seekerCompletesCurseAction()} className="w-full flex items-center gap-2 mt-2">
+                  <Button onClick={() => seekerCompletesCurseAction()} className="w-full flex items-center gap-2 mt-2" disabled={isCurseActionDisabled}>
                      <CheckSquare className="h-4 w-4" /> Mark Curse Resolved
                   </Button>
                 ) : activeCurseDetails.requiresSeekerAction === 'photo' ? (
                    <SeekerCursePhotoUpload 
-                     onPhotoSubmit={(file) => {
-                       // For now, submitting photo just clears the curse action
-                       seekerCompletesCurseAction();
-                     }}
+                     onPhotoSubmit={(file) => seekerCompletesCurseAction(file)}
+                     disabled={isCurseActionDisabled}
                    />
                 ) : null }
               </CardContent>
@@ -361,17 +368,25 @@ export default function SeekerPage() {
                   value={currentChallengeDescription} 
                   onChange={(e) => setCurrentChallengeDescription(e.target.value)}
                   placeholder="Describe the physical or location-based task" 
-                  disabled={isPenaltyActive}
+                  disabled={isPenaltyActive || (!!currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved')}
                 />
               </div>
             </CardContent>
             <CardFooter className="flex flex-wrap gap-2">
-              <Button onClick={() => handleChallengeSubmit('completed')} disabled={isPenaltyActive || !currentChallengeDescription} className="bg-green-600 hover:bg-green-700 flex items-center gap-2"><ThumbsUp/>Completed</Button>
-              <Button variant="outline" onClick={() => handleChallengeSubmit('failed')} disabled={isPenaltyActive || !currentChallengeDescription} className="flex items-center gap-2"><ThumbsDown/>Failed</Button>
+              <Button 
+                onClick={() => handleChallengeSubmit('completed')} 
+                disabled={isPenaltyActive || !currentChallengeDescription || (!!currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved')} 
+                className="bg-green-600 hover:bg-green-700 flex items-center gap-2"><ThumbsUp/>Completed</Button>
+              <Button 
+                variant="outline" 
+                onClick={() => handleChallengeSubmit('failed')} 
+                disabled={isPenaltyActive || !currentChallengeDescription || (!!currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved')} 
+                className="flex items-center gap-2"><ThumbsDown/>Failed</Button>
               {currentChallengeDescription && 
                 <VetoConsequenceModal 
                   challengeDescription={currentChallengeDescription} 
                   onConfirmVeto={() => handleChallengeSubmit('vetoed')} 
+                  triggerDisabled={isPenaltyActive || (!!currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved')}
                 />
               }
             </CardFooter>
@@ -387,7 +402,7 @@ export default function SeekerPage() {
                 <Label htmlFor="question-type">Question Type</Label>
                 <Select 
                   onValueChange={(value) => setSelectedQuestionType(QUESTION_OPTIONS.find(q => q.id === value))}
-                  disabled={isPenaltyActive || !!currentRound?.activeCurse}
+                  disabled={isPenaltyActive || (!!currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved')}
                   value={selectedQuestionType?.id}
                 >
                   <SelectTrigger id="question-type"><SelectValue placeholder="Select question type" /></SelectTrigger>
@@ -410,12 +425,12 @@ export default function SeekerPage() {
                   value={questionText}
                   onChange={(e) => setQuestionText(e.target.value)}
                   placeholder={selectedQuestionType?.seekerPrompt || "Enter your question based on the selected type..."}
-                  disabled={isPenaltyActive || !selectedQuestionType || !!currentRound?.activeCurse}
+                  disabled={isPenaltyActive || !selectedQuestionType || (!!currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved')}
                 />
               </div>
             </CardContent>
             <CardFooter>
-              <Button onClick={handleAskQuestion} disabled={isPenaltyActive || !selectedQuestionType || !questionText.trim() || !!currentRound?.activeCurse} className="flex items-center gap-2">
+              <Button onClick={handleAskQuestion} disabled={isPenaltyActive || !selectedQuestionType || !questionText.trim() || (!!currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved')} className="flex items-center gap-2">
                 <Send /> Ask Question
               </Button>
             </CardFooter>

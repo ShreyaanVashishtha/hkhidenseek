@@ -16,14 +16,15 @@ import {
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Loader2, AlertTriangle } from 'lucide-react';
-import { vetoConsequenceForecaster } from '@/ai/flows/veto-consequence-forecaster'; // Ensure this path is correct
+import { vetoConsequenceForecaster } from '@/ai/flows/veto-consequence-forecaster'; 
 
 interface VetoConsequenceModalProps {
   challengeDescription: string;
   onConfirmVeto: () => void;
+  triggerDisabled?: boolean;
 }
 
-export function VetoConsequenceModal({ challengeDescription, onConfirmVeto }: VetoConsequenceModalProps) {
+export function VetoConsequenceModal({ challengeDescription, onConfirmVeto, triggerDisabled = false }: VetoConsequenceModalProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [consequence, setConsequence] = useState<string | null>(null);
@@ -53,7 +54,6 @@ export function VetoConsequenceModal({ challengeDescription, onConfirmVeto }: Ve
     if (open) {
       handleFetchConsequences();
     } else {
-      // Reset state when closing
       setConsequence(null);
       setError(null);
       setIsLoading(false);
@@ -63,7 +63,7 @@ export function VetoConsequenceModal({ challengeDescription, onConfirmVeto }: Ve
   return (
     <AlertDialog open={isOpen} onOpenChange={handleOpenChange}>
       <AlertDialogTrigger asChild>
-        <Button variant="destructive" className="bg-destructive hover:bg-destructive/90 flex items-center gap-2">
+        <Button variant="destructive" className="bg-destructive hover:bg-destructive/90 flex items-center gap-2" disabled={triggerDisabled}>
           <AlertTriangle className="h-4 w-4" /> Veto Challenge
         </Button>
       </AlertDialogTrigger>
@@ -104,3 +104,4 @@ export function VetoConsequenceModal({ challengeDescription, onConfirmVeto }: Ve
     </AlertDialog>
   );
 }
+

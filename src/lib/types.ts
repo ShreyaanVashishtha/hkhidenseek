@@ -44,6 +44,7 @@ export interface Challenge {
   id:string;
   description: string;
   status: "pending" | "completed" | "failed" | "vetoed";
+  // coinsEarned removed as seekers have unlimited coins
 }
 
 export type CurseDiceOutcome = 1 | 2 | 3 | 4 | 5 | 6;
@@ -56,16 +57,16 @@ export interface CurseRule {
   icon: React.ElementType;
   durationMinutes?: number;
   requiresSeekerAction?: 'photo' | 'confirmation';
-  requiresHiderTextInput?: boolean; // Added for Zoologist type curses
-  // hidesHiderPhotoInput?: boolean; // Not used in this iteration
-  // hidesSeekerPhotoInput?: boolean; // Not used, handled by requiresSeekerAction: 'photo'
+  requiresHiderTextInput?: boolean; 
 }
 
 
 export interface ActiveCurseInfo {
-  curseId: number; // The number rolled, links to CURSE_DICE_OPTIONS
+  curseId: number; 
   startTime: Date;
-  hiderInputText?: string; // For Zoologist category or similar text from hider
+  hiderInputText?: string; 
+  seekerSubmittedPhoto?: File; 
+  resolutionStatus?: 'pending_seeker_action' | 'pending_hider_acknowledgement' | 'resolved';
 }
 
 export interface GameRound {
@@ -89,3 +90,4 @@ export interface GameState {
 }
 
 export type TeamRole = "hider" | "seeker" | "admin" | "spectator";
+

@@ -27,7 +27,8 @@ interface GameContextType extends GameState {
   activateCurse: (hiderTeamId: string, rolledCurseNumber: number, hiderInputText?: string) => void;
   recordCurseUsed: (hiderTeamId: string) => void;
   clearActiveCurse: () => void;
-  seekerCompletesCurseAction: () => void;
+  seekerCompletesCurseAction: (photoFile?: File) => void;
+  hiderAcknowledgesSeekerPhoto: () => void;
 }
 
 const defaultGameState: GameState = {
@@ -104,7 +105,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     setGameState(prev => ({
       ...prev,
       teams: prev.teams.map(team =>
-        team.id === teamId ? { ...team, isHiding, isSeeking, coins: isHiding ? (team.coins || INITIAL_COINS_HIDER_START) : (isSeeking ? 0 : team.coins) } : team
+        team.id === teamId ? { ...team, isHiding, isSeeking, coins: isHiding ? (team.coins || INITIAL_COINS_HIDER_START) : (isSeeking ? 0 : team.coins), cursesUsed: isHiding ? 0 : team.cursesUsed } : team
       ),
     }));
   }, []);
@@ -113,8 +114,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     setGameState(prev => {
       const teamsWithRoundResets = prev.teams.map(t => ({
         ...t,
-        cursesUsed: t.isHiding ? 0 : t.cursesUsed, // Reset cursesUsed only for the new hider
-        coins: t.isSeeking ? 0 : (t.isHiding ? (t.coins || INITIAL_COINS_HIDER_START) : t.coins), // Reset coins for seekers, hiders keep/get initial
+        cursesUsed: t.isHiding ? 0 : t.cursesUsed, 
+        coins: t.isSeeking ? 0 : (t.isHiding ? (t.coins || INITIAL_COINS_HIDER_START) : t.coins), 
       }));
 
       const hidingTeamForRound = teamsWithRoundResets.find(t => t.isHiding);
@@ -173,7 +174,6 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       const updatedTeams = prev.teams.map(team => {
         if (team.id === finishedRound.hidingTeam?.id && finishedRound.phaseStartTime && prev.currentRound?.status === 'seeking-phase') { 
           const hideEndTime = finishedRound.endTime || new Date();
-          // Calculate duration from start of seeking phase to end of round
           const roundHidingDuration = Math.floor((hideEndTime.getTime() - new Date(finishedRound.phaseStartTime).getTime()) / 1000);
           if (roundHidingDuration > team.hidingTimeSeconds) {
             return { ...team, hidingTimeSeconds: roundHidingDuration };
@@ -222,7 +222,6 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
                     coins: operation === 'add' ? currentHidingTeamCoins + amount : Math.max(0, currentHidingTeamCoins - amount)
                 };
             }
-            // Seekers don't have coins, so no need to update them here for 'seekingTeams'
         }
 
         return {
@@ -307,12 +306,16 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         }
         return team;
       });
+      const newCurrentRoundHidingTeam = prev.currentRound.hidingTeam ? {
+        ...prev.currentRound.hidingTeam,
+        cursesUsed: (prev.currentRound.hidingTeam.cursesUsed || 0) + 1,
+      } : null;
+
+      if (!newCurrentRoundHidingTeam) return prev; // Should not happen if validation passed
+
       const newCurrentRound = {
         ...prev.currentRound,
-        hidingTeam: {
-          ...prev.currentRound.hidingTeam,
-          cursesUsed: (prev.currentRound.hidingTeam.cursesUsed || 0) + 1,
-        },
+        hidingTeam: newCurrentRoundHidingTeam,
       };
       return {
         ...prev,
@@ -332,6 +335,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       const activeCurseInfo: ActiveCurseInfo = {
         curseId: rolledCurseNumber,
         startTime: new Date(),
+        resolutionStatus: 'pending_seeker_action', 
       };
       if (hiderInputText) {
         activeCurseInfo.hiderInputText = hiderInputText;
@@ -360,12 +364,58 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         },
       };
     });
+    toast({ title: "Curse Cleared", description: "The active curse has been cleared." });
   }, []);
 
-  const seekerCompletesCurseAction = useCallback(() => {
-    clearActiveCurse();
-    toast({title: "Curse Resolved", description: "Seeker action completed."})
-  }, [clearActiveCurse]);
+ const seekerCompletesCurseAction = useCallback((photoFile?: File) => {
+    setGameState(prev => {
+      if (!prev.currentRound || !prev.currentRound.activeCurse) return prev;
+
+      const curseDetails = CURSE_DICE_OPTIONS.find(c => c.number === prev.currentRound!.activeCurse!.curseId);
+      if (!curseDetails) return prev;
+
+      if (curseDetails.requiresSeekerAction === 'photo' && photoFile) {
+        return {
+          ...prev,
+          currentRound: {
+            ...prev.currentRound,
+            activeCurse: {
+              ...prev.currentRound.activeCurse,
+              seekerSubmittedPhoto: photoFile,
+              resolutionStatus: 'pending_hider_acknowledgement',
+            },
+          },
+        };
+      } else if (curseDetails.requiresSeekerAction === 'confirmation') {
+        // For confirmation, curse is cleared immediately by seeker
+        return {
+          ...prev,
+          currentRound: {
+            ...prev.currentRound,
+            activeCurse: null, // Clear the curse
+          },
+        };
+      }
+      return prev; // No change if conditions not met
+    });
+  }, []);
+
+  const hiderAcknowledgesSeekerPhoto = useCallback(() => {
+    setGameState(prev => {
+      if (!prev.currentRound || !prev.currentRound.activeCurse || !prev.currentRound.activeCurse.seekerSubmittedPhoto) {
+        toast({ title: "Error", description: "No seeker photo to acknowledge or no active curse.", variant: "destructive" });
+        return prev;
+      }
+      toast({ title: "Curse Resolved by Hider", description: "Seeker's photo acknowledged. Curse ended." });
+      return { // Return new state
+        ...prev,
+        currentRound: {
+          ...prev.currentRound,
+          activeCurse: null, // Clear the curse
+        },
+      };
+    });
+  }, []);
 
 
   return (
@@ -391,8 +441,10 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       recordCurseUsed,
       clearActiveCurse,
       seekerCompletesCurseAction,
+      hiderAcknowledgesSeekerPhoto,
     }}>
       {children}
     </GameContext.Provider>
   );
 };
+
