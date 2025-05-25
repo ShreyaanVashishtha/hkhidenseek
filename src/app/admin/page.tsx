@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useGameContext } from "@/hooks/useGameContext";
 import type { Player, Team } from "@/lib/types";
 import { PageHeader } from "@/components/PageHeader";
-import { ShieldCheck, Users, UserPlus, Play, StopCircle, Shuffle, Trash2, Map, ClockForward } from "lucide-react";
+import { ShieldCheck, Users, UserPlus, Play, StopCircle, Shuffle, Trash2, Map, Forward } from "lucide-react";
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -290,7 +290,7 @@ export default function AdminPage() {
             variant="outline"
             className="flex items-center gap-2"
           >
-            <ClockForward /> Force Start Seeking Phase
+            <Forward /> Force Start Seeking Phase
           </Button>
           <Button 
             onClick={handleEndRound} 
@@ -305,5 +305,7 @@ export default function AdminPage() {
     </div>
   );
 }
+
+    
 
     
