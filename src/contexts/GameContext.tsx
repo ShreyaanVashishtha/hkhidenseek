@@ -48,7 +48,7 @@ const defaultGameState: GameState = {
   currentRound: null,
   gameHistory: [],
   mtrMapUrl: MTR_MAP_PLACEHOLDER_URL,
-  adminPin: undefined, // Will be defaulted or loaded
+  adminPin: "113221", // Default Admin PIN
   hiderPin: undefined,
   seekerPin: undefined,
   isAdminAuthenticated: false,
@@ -71,13 +71,22 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   useEffect(() => {
-    // Load PINs and auth status from localStorage on initial load
     const adminPinStorageKey = 'adminPin_mtrGame';
-    let loadedAdminPin = localStorage.getItem(adminPinStorageKey);
+    const loadedAdminPinFromStorage = localStorage.getItem(adminPinStorageKey);
+    let finalAdminPinToSet: string | undefined = gameState.adminPin; // Starts with default from state ("113221")
 
-    if (loadedAdminPin === null) { // Only default if it truly doesn't exist in localStorage
-      loadedAdminPin = "113221";
-      localStorage.setItem(adminPinStorageKey, loadedAdminPin);
+    if (loadedAdminPinFromStorage === null) {
+      // No PIN in storage, means it's the first load or storage was cleared.
+      // The default "113221" from gameState.adminPin is correct.
+      // We should write this default to localStorage so it persists.
+      localStorage.setItem(adminPinStorageKey, "113221");
+      finalAdminPinToSet = "113221";
+    } else if (loadedAdminPinFromStorage === "") {
+      // Admin has explicitly cleared the PIN.
+      finalAdminPinToSet = undefined;
+    } else {
+      // A specific PIN is in localStorage.
+      finalAdminPinToSet = loadedAdminPinFromStorage;
     }
 
     const loadedHiderPin = localStorage.getItem('hiderPin_mtrGame');
@@ -88,14 +97,14 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
 
     setGameState(prev => ({
       ...prev,
-      adminPin: loadedAdminPin === "" ? undefined : loadedAdminPin, // Treat empty string as 'no PIN' for state logic
+      adminPin: finalAdminPinToSet,
       hiderPin: loadedHiderPin === "" ? undefined : loadedHiderPin,
       seekerPin: loadedSeekerPin === "" ? undefined : loadedSeekerPin,
       isAdminAuthenticated: loadedIsAdminAuthed,
       isHiderAuthenticated: loadedIsHiderAuthed,
       isSeekerAuthenticated: loadedIsSeekerAuthed,
     }));
-  }, []);
+  }, []); // Runs once on mount
 
 
   const addPlayer = useCallback((name: string): Player => {
@@ -434,9 +443,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       } else if (curseDetails.requiresSeekerAction === 'confirmation') {
          // For confirmation curses, we'll call clearActiveCurse directly which handles the toast.
          // No state change here, as clearActiveCurse will trigger re-render.
-         // The actual clearing happens in the `clearActiveCurse` function.
       }
-      return prev; // Return previous state if no specific action matched or handled by clearActiveCurse
+      return prev; 
     });
     // If it was a confirmation curse, clear it.
     if (gameState.currentRound?.activeCurse) {
@@ -453,7 +461,6 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         toast({ title: "Error", description: "No seeker photo to acknowledge or no active curse.", variant: "destructive" });
         return prev;
       }
-       // The actual clearing happens in the `clearActiveCurse` function.
       return prev; 
     });
     clearActiveCurse();
@@ -461,24 +468,28 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
 
   // PIN and Auth Logic
   const setAdminPin = useCallback((pin: string) => {
-    setGameState(prev => ({ ...prev, adminPin: pin === "" ? undefined : pin }));
-    localStorage.setItem('adminPin_mtrGame', pin); // Store empty string if cleared, or the pin itself
-    toast({ title: "Admin PIN Updated", description: `Admin access PIN has been ${pin === "" ? "cleared" : "set"}.` });
+    setGameState(prev => ({ ...prev, adminPin: pin === "" ? undefined : pin, isAdminAuthenticated: pin === "" ? false : prev.isAdminAuthenticated })); // Also de-auth if PIN cleared
+    localStorage.setItem('adminPin_mtrGame', pin); 
+    if(pin === "") localStorage.removeItem('isAdminAuthenticated_mtrGame');
+    toast({ title: "Admin PIN Updated", description: `Admin access PIN has been ${pin === "" ? "cleared (access revoked)" : "set"}.` });
   }, []);
 
   const setHiderPin = useCallback((pin: string) => {
-    setGameState(prev => ({ ...prev, hiderPin: pin === "" ? undefined : pin }));
+    setGameState(prev => ({ ...prev, hiderPin: pin === "" ? undefined : pin, isHiderAuthenticated: pin === "" ? false : prev.isHiderAuthenticated }));
     localStorage.setItem('hiderPin_mtrGame', pin);
-    toast({ title: "Hider PIN Updated", description: `Hider panel PIN has been ${pin === "" ? "cleared" : "set"}.` });
+    if(pin === "") localStorage.removeItem('isHiderAuthenticated_mtrGame');
+    toast({ title: "Hider PIN Updated", description: `Hider panel PIN has been ${pin === "" ? "cleared (access revoked)" : "set"}.` });
   }, []);
 
   const setSeekerPin = useCallback((pin: string) => {
-    setGameState(prev => ({ ...prev, seekerPin: pin === "" ? undefined : pin }));
+    setGameState(prev => ({ ...prev, seekerPin: pin === "" ? undefined : pin, isSeekerAuthenticated: pin === "" ? false : prev.isSeekerAuthenticated }));
     localStorage.setItem('seekerPin_mtrGame', pin);
-    toast({ title: "Seeker PIN Updated", description: `Seeker panel PIN has been ${pin === "" ? "cleared" : "set"}.` });
+    if(pin === "") localStorage.removeItem('isSeekerAuthenticated_mtrGame');
+    toast({ title: "Seeker PIN Updated", description: `Seeker panel PIN has been ${pin === "" ? "cleared (access revoked)" : "set"}.` });
   }, []);
 
   const authenticateAdmin = useCallback((enteredPin: string): boolean => {
+    // Use gameState.adminPin which reflects the current default or admin-set value
     if (gameState.adminPin === enteredPin) {
       setGameState(prev => ({ ...prev, isAdminAuthenticated: true }));
       localStorage.setItem('isAdminAuthenticated_mtrGame', 'true');
