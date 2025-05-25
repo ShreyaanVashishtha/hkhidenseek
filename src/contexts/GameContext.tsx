@@ -33,13 +33,12 @@ const deserializeDates = (obj: any): any => {
   for (const key in obj) {
     if (Object.prototype.hasOwnProperty.call(obj, key)) {
       const value = obj[key];
-      // Check for common date keys or if a string looks like an ISO date string
       if (typeof value === 'string' && 
           (key === 'timestamp' || key === 'startTime' || key === 'phaseStartTime' || key === 'endTime' || /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(value))) {
         const date = new Date(value);
         newObj[key] = !isNaN(date.getTime()) ? date : value;
       } else {
-        newObj[key] = deserializeDates(value); // Recurse for nested objects
+        newObj[key] = deserializeDates(value); 
       }
     }
   }
@@ -48,21 +47,19 @@ const deserializeDates = (obj: any): any => {
 
 const deserializeState = (data: any): GameState => {
   if (!data) return { ...defaultGameState };
-  console.log('[DESERIALIZE] Raw game_data from Supabase:', JSON.stringify(data).substring(0, 300));
+  console.log('[DESERIALIZE] Raw game_data from Supabase:', JSON.stringify(data).substring(0, 300) + "...");
   
-  // First, deserialize all potential dates in the entire data object
   let deserialized = deserializeDates(data);
   console.log('[DESERIALIZE] After deserializeDates. Admin PIN:', deserialized.adminPin, 'CurrentRound Status:', deserialized.currentRound?.status);
 
   if (deserialized.currentRound && deserialized.currentRound.askedQuestions) {
-    console.log('[DESERIALIZE] askedQuestions before specific processing:', JSON.stringify(deserialized.currentRound.askedQuestions.map((q:any) => ({id: q.id, response: q.response ? String(q.response).substring(0,50)+'...' : undefined }))));
-    // Ensure question responses (which might be URLs) remain strings
+    console.log('[DESERIALIZE] askedQuestions before specific processing:', JSON.stringify(deserialized.currentRound.askedQuestions.map((q:any) => ({id: q.id, response: q.response ? String(q.response).substring(0,70)+'...' : undefined }))));
     deserialized.currentRound.askedQuestions = deserialized.currentRound.askedQuestions.map((q: any) => ({
       ...q,
-      response: typeof q.response === 'string' ? q.response : q.response, // Keep it as is if string, or original if not (e.g. null/undefined)
-      timestamp: q.timestamp ? new Date(q.timestamp) : undefined, // Ensure question timestamp is Date
+      response: q.response, // Keep as is, assuming it's already a string (URL) or null/undefined
+      timestamp: q.timestamp ? new Date(q.timestamp) : undefined,
     }));
-    console.log('[DESERIALIZE] askedQuestions AFTER specific processing:', JSON.stringify(deserialized.currentRound.askedQuestions.map((q:any) => ({id: q.id, response: q.response ? String(q.response).substring(0,50)+'...' : undefined }))));
+    console.log('[DESERIALIZE] askedQuestions AFTER specific processing:', JSON.stringify(deserialized.currentRound.askedQuestions.map((q:any) => ({id: q.id, response: q.response ? String(q.response).substring(0,70)+'...' : undefined }))));
   } else {
     console.log('[DESERIALIZE] No currentRound or no askedQuestions to process specifically.');
   }
@@ -88,12 +85,12 @@ const deserializeState = (data: any): GameState => {
 
 const serializeStateForSupabase = (state: GameState): any => {
   const stateCopy = JSON.parse(JSON.stringify(state)); // Deep copy and convert Dates to ISO strings
-  
-  // Remove client-only File objects if they were accidentally included
   if (stateCopy.currentRound && stateCopy.currentRound.activeCurse && stateCopy.currentRound.activeCurse.seekerSubmittedPhoto) {
-    delete stateCopy.currentRound.activeCurse.seekerSubmittedPhoto;
+    delete stateCopy.currentRound.activeCurse.seekerSubmittedPhoto; // This field was for local File object, URL is seekerSubmittedPhotoUrl
   }
-  console.log('[SERIALIZE] Serialized askedQuestions for Supabase:', stateCopy.currentRound?.askedQuestions?.map((q:any) => ({id: q.id, response: q.response ? String(q.response).substring(0,50)+'...' : undefined })));
+  if (stateCopy.currentRound?.askedQuestions) {
+     console.log('[SERIALIZE] Serializing askedQuestions for Supabase. Responses:', stateCopy.currentRound.askedQuestions.map((q:any) => ({id: q.id, response: q.response ? String(q.response).substring(0,70)+'...' : undefined })));
+  }
   return stateCopy;
 };
 
@@ -115,7 +112,7 @@ const uploadPhotoToSupabaseStorage = async (file: File, pathPrefix: string): Pro
       .from('game-assets')
       .upload(filePath, file, {
         cacheControl: '3600',
-        upsert: false,
+        upsert: false, // Use false to avoid accidental overwrites if IDs are reused quickly, though unlikely with Date.now()
       });
 
     if (error) {
@@ -143,7 +140,7 @@ const uploadPhotoToSupabaseStorage = async (file: File, pathPrefix: string): Pro
   }
 };
 
-interface GameContextType extends Omit<GameState, 'isAdminAuthenticated' | 'isHiderAuthenticated' | 'isSeekerAuthenticated'> {
+interface GameContextType extends GameState {
   isLoadingState: boolean;
   addPlayer: (name: string) => Player;
   createTeam: (name: string) => Team;
@@ -164,13 +161,6 @@ interface GameContextType extends Omit<GameState, 'isAdminAuthenticated' | 'isHi
   clearActiveCurse: () => void;
   seekerCompletesCurseAction: (photoFile?: File) => Promise<void>;
   hiderAcknowledgesSeekerPhoto: () => void;
-
-  adminPin?: string; // Global PINs are still part of game state
-  hiderPin?: string;
-  seekerPin?: string;
-  setAdminPin: (pin: string) => void;
-  setHiderPin: (pin: string) => void;
-  setSeekerPin: (pin: string) => void;
   
   authenticateAdmin: (enteredPin: string) => boolean;
   authenticateHider: (enteredPin: string) => boolean;
@@ -178,9 +168,12 @@ interface GameContextType extends Omit<GameState, 'isAdminAuthenticated' | 'isHi
   logoutAdmin: () => void;
   logoutHider: () => void;
   logoutSeeker: () => void;
-  isAdminAuthenticated: boolean; // Local auth states
+  isAdminAuthenticated: boolean; 
   isHiderAuthenticated: boolean;
   isSeekerAuthenticated: boolean;
+  setAdminPin: (pin: string) => void;
+  setHiderPin: (pin: string) => void;
+  setSeekerPin: (pin: string) => void;
 }
 
 export const GameContext = createContext<GameContextType | undefined>(undefined);
@@ -205,18 +198,19 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     let finalNewState: GameState | null = null;
 
     setGameStateInternal(currentInternalState => {
-      const newState = typeof updater === 'function' ? updater(gameStateRef.current) : updater;
+      const newState = typeof updater === 'function' ? updater(gameStateRef.current) : updater; // Use gameStateRef.current
       gameStateRef.current = newState; 
       finalNewState = newState;
-      console.log('[SET_GAME_STATE] Local state updated. Admin PIN:', finalNewState?.adminPin);
+      console.log('[SET_GAME_STATE] Local state updated. Sending to Supabase. Admin PIN:', finalNewState?.adminPin);
       return newState; 
     });
 
     if (finalNewState) {
       const serializedData = serializeStateForSupabase(finalNewState);
       if (finalNewState.currentRound?.askedQuestions) {
-        console.log('[SYNC_UP] About to send to Supabase. Asked questions responses:', finalNewState.currentRound.askedQuestions.map(q => ({id: q.id, response: q.response ? String(q.response).substring(0,50)+'...' : undefined })));
+         console.log('[SYNC_UP] About to send to Supabase. Asked questions responses:', finalNewState.currentRound.askedQuestions.map(q => ({id: q.id, response: q.response ? String(q.response).substring(0,70)+'...' : undefined })));
       }
+      console.log('[SYNC_UP] Attempting to update Supabase with state. Admin PIN:', finalNewState.adminPin);
       
       const { error } = await supabase
         .from('game_sessions')
@@ -235,7 +229,6 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const fetchInitialState = async () => {
       console.log('[INIT] Fetching initial game state from Supabase...');
-      setIsLoadingState(true);
       try {
         const { data, error } = await supabase
           .from('game_sessions')
@@ -255,9 +248,9 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
           }, { onConflict: 'id' });
 
         } else if (data && data.game_data) {
-          console.log("[INIT] Game state found in Supabase. Raw game_data:", JSON.stringify(data.game_data).substring(0, 500));
+          console.log("[INIT] Game state found in Supabase. Raw game_data:", JSON.stringify(data.game_data).substring(0, 500) + "...");
           if (data.game_data.currentRound && data.game_data.currentRound.askedQuestions) {
-            console.log("[INIT] Raw askedQuestions from Supabase before deserialization:", JSON.stringify(data.game_data.currentRound.askedQuestions.map((q:any) => ({id: q.id, response: q.response ? String(q.response).substring(0,50)+'...' : undefined }))));
+            console.log("[INIT] Raw askedQuestions from Supabase before deserialization:", JSON.stringify(data.game_data.currentRound.askedQuestions.map((q:any) => ({id: q.id, response: q.response ? String(q.response).substring(0,70)+'...' : undefined }))));
           }
           const loadedState = deserializeState(data.game_data);
           setGameStateInternal(loadedState);
@@ -282,8 +275,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         setGameStateInternal(defaultGameState);
         gameStateRef.current = defaultGameState;
       } finally {
-        setIsLoadingState(false);
-        console.log('[INIT] Initial state loading process complete. Admin PIN in context:', gameStateRef.current.adminPin);
+          setIsLoadingState(false);
+          console.log('[INIT] Initial state loading process complete. Admin PIN in context:', gameStateRef.current.adminPin);
       }
     };
 
@@ -308,7 +301,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
             const incomingGameData = (payload.new as any).game_data;
             console.log('[REALTIME] Incoming game_data (raw). Admin PIN:', incomingGameData.adminPin, 'CurrentRound Status:', incomingGameData.currentRound?.status);
              if (incomingGameData.currentRound && incomingGameData.currentRound.askedQuestions) {
-                console.log('[REALTIME] Incoming askedQuestions from Supabase before deserialization:', JSON.stringify(incomingGameData.currentRound.askedQuestions.map((q:any) => ({id: q.id, response: q.response ? String(q.response).substring(0,50)+'...' : undefined }))));
+                console.log('[REALTIME] Incoming askedQuestions from Supabase before deserialization:', JSON.stringify(incomingGameData.currentRound.askedQuestions.map((q:any) => ({id: q.id, response: q.response ? String(q.response).substring(0,70)+'...' : undefined }))));
              }
             
             const newGameStateFromSupabase = deserializeState(incomingGameData);
@@ -317,7 +310,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
             gameStateRef.current = newGameStateFromSupabase; 
             console.log('[REALTIME] Change detected and applied. New Admin PIN in context:', newGameStateFromSupabase.adminPin);
             if (newGameStateFromSupabase.currentRound?.askedQuestions) {
-                console.log('[REALTIME] Applied askedQuestions from Supabase (after deserialization):', newGameStateFromSupabase.currentRound.askedQuestions.map(q => ({id: q.id, response: q.response ? String(q.response).substring(0,50)+'...' : undefined })));
+                console.log('[REALTIME] Applied askedQuestions from Supabase (after deserialization):', newGameStateFromSupabase.currentRound.askedQuestions.map(q => ({id: q.id, response: q.response ? String(q.response).substring(0,70)+'...' : undefined })));
             }
           } else {
             console.warn('[REALTIME] Payload did not contain new.game_data or new was null.');
@@ -423,7 +416,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         if (t.isHiding) { 
           updatedTeam.cursesUsed = 0; 
         }
-        if (t.isSeeking && prev.currentRound !== null) { // Only reset seeker coins if it's not the very first round
+        if (t.isSeeking) { // Reset seeker coins only if they become seekers
              updatedTeam.coins = 0;
         }
         return updatedTeam;
@@ -575,7 +568,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       }
       
       const updatedAskedQuestions = [...prev.currentRound.askedQuestions, question];
-      console.log(`[ASK_QUESTION] Adding new question. Total questions now: ${updatedAskedQuestions.length}`);
+      console.log(`[ASK_QUESTION] Adding new question. Total questions now: ${updatedAskedQuestions.length}. New question:`, JSON.stringify(question));
       
       const updatedRound = {
         ...prev.currentRound,
@@ -608,7 +601,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     }
 
     if (finalResponse !== undefined) {
-      console.log(`[ANSWER_QUESTION] Setting final response for question ${questionId}: ${String(finalResponse).substring(0,50)}...`);
+      console.log(`[ANSWER_QUESTION] Setting final response for question ${questionId}: ${finalResponse}`);
       setGameState(prev => {
         if (!prev.currentRound) {
             console.error("[ANSWER_QUESTION] No current round to update.");
@@ -617,7 +610,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         let questionFoundAndUpdated = false;
         const updatedAskedQuestions = prev.currentRound.askedQuestions.map(q => {
           if (q.id === questionId) {
-            console.log(`[ANSWER_QUESTION] Updating question ${q.id}. Old response: ${q.response ? String(q.response).substring(0,50)+'...' : 'undefined'}, New response: ${String(finalResponse).substring(0,50)}...`);
+            console.log(`[ANSWER_QUESTION] Inside map: Updating question ${q.id}. Old response: ${q.response ? String(q.response).substring(0,70)+'...' : 'undefined'}, New response: ${String(finalResponse).substring(0,70)}...`);
             questionFoundAndUpdated = true;
             return { ...q, response: finalResponse };
           }
@@ -626,10 +619,12 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
 
         if (!questionFoundAndUpdated) {
             console.error(`[ANSWER_QUESTION] Question with ID ${questionId} not found in currentRound.askedQuestions.`);
-            return prev; // Return previous state if question not found
+            return prev;
         }
         
-        console.log('[ANSWER_QUESTION] Updated askedQuestions array to be set in currentRound:', updatedAskedQuestions.map(q => ({id: q.id, response: q.response ? String(q.response).substring(0,50)+'...' : undefined })));
+        const updatedQuestionForLog = updatedAskedQuestions.find(q => q.id === questionId);
+        console.log('[ANSWER_QUESTION] Updated question object:', JSON.stringify(updatedQuestionForLog));
+        console.log('[ANSWER_QUESTION] Full updatedAskedQuestions array being set to currentRound:', updatedAskedQuestions.map(q => ({id: q.id, response: q.response ? String(q.response).substring(0,70)+'...' : undefined })));
         
         return {
           ...prev,
@@ -730,13 +725,12 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         });
       } else {
         toast({ title: "Curse Photo Upload Failed", description: "Could not upload photo for curse. Please try again.", variant: "destructive" });
+         console.error(`[SEEKER_CURSE_ACTION] Curse photo upload failed. Upload function returned:`, uploadedUrl);
       }
     } else if (actualCurseDetails.requiresSeekerAction === 'confirmation') {
       console.log(`[SEEKER_CURSE_ACTION] Seeker confirmed curse ${actualCurseDetails.name}. Clearing curse.`);
       clearActiveCurse(); 
     } else if (!actualCurseDetails.requiresSeekerAction && actualCurseDetails.durationMinutes) {
-      // This case is handled by the timer calling clearActiveCurse on its own.
-      // No explicit action needed from seeker if it's purely timed.
       console.log(`[SEEKER_CURSE_ACTION] Curse ${actualCurseDetails.name} is timed. Resolution handled by timer.`);
     } else {
         console.warn(`[SEEKER_CURSE_ACTION] Curse ${actualCurseDetails.name} was actioned by seeker but conditions not fully met (e.g. photo needed but not provided, or no action defined). Curse state:`, currentActiveCurse);
@@ -842,7 +836,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       clearActiveCurse,
       seekerCompletesCurseAction,
       hiderAcknowledgesSeekerPhoto,
-      adminPin: gameStateRef.current.adminPin, // Ensure these are passed down
+      adminPin: gameStateRef.current.adminPin, 
       hiderPin: gameStateRef.current.hiderPin,
       seekerPin: gameStateRef.current.seekerPin,
       setAdminPin,
@@ -862,6 +856,4 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     </GameContext.Provider>
   );
 };
-    
-
     
