@@ -1,3 +1,4 @@
+
 import type { Metadata } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
@@ -16,8 +17,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'MTR Hide and Seek',
-  description: 'A game of hide and seek across the Hong Kong MTR system.',
+  title: 'Hide and Seek Game', // Renamed
+  description: 'An exciting game of hide and seek, set in a dynamic urban environment.', // Generalized
 };
 
 export default function RootLayout({

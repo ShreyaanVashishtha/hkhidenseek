@@ -2,23 +2,23 @@
 import type { QuestionOption, CurseRule } from '@/lib/types';
 import { MapPin, Target, GitCompareArrows, Camera, ScanLine, ShieldAlert, Citrus, Footprints, Car, Route, Bird, Home, ShieldCheck, Search, Eye, ScrollText, Trophy } from 'lucide-react';
 
-export const GAME_TITLE = "MTR Hide and Seek";
+export const GAME_TITLE = "Hide and Seek"; // Renamed
 
-export const MTR_MAP_PLACEHOLDER_URL = "https://www.mtr.com.hk/en/customer/images/services/MTR_routemap_510.jpg"; // Default to actual MTR map
+export const MTR_MAP_PLACEHOLDER_URL = "https://www.mtr.com.hk/en/customer/images/services/MTR_routemap_510.jpg"; 
 
 export const GAME_RULES = {
   introduction: "The team of Hiders that avoids capture for the longest time overall wins.",
   transport: {
     title: "Allowed Transport",
     rules: [
-      "Only the MTR may be used.",
+      "Only the MTR may be used.", // Retaining MTR specificity for rules for now, as gameplay relies on it.
       "No buses, ferries, taxis, or trams."
     ]
   },
   geographicScope: {
     title: "Geographic Scope",
     rules: [
-      "Hong Kong is divided by MTR lines and station zones.",
+      "Hong Kong is divided by MTR lines and station zones.", // Retaining MTR specificity for rules
       "A hiding zone is defined as a 500m radius from a chosen MTR station.",
       "The hider must stay within their 500m zone once hiding begins."
     ]
@@ -64,9 +64,9 @@ export const GAME_RULES = {
   curseDiceRules: {
     title: "Hider’s Curse Dice Rules",
     rules: [
-      `Cost: ${50} coins (purchased during the seeking phase).`, // CURSE_DICE_COST will be used in code
+      `Cost: ${50} coins (purchased during the seeking phase).`, 
       "Roll a 6-sided die; results apply immediately.",
-      `Curse dice can only be used ${2} times per round, per hider team.`, // MAX_CURSES_PER_ROUND
+      `Curse dice can only be used ${2} times per round, per hider team.`, 
       "If you get the same curse number as before, you may get 1 additional try. If you still get the same curse number, your chance is lost."
     ]
   },
@@ -85,7 +85,7 @@ export const QUESTION_OPTIONS: QuestionOption[] = [
   { id: 'q_radar', name: 'Radar', category: 'Radar', cost: 0, hiderCoinsEarned: 30, description: "Determine if hiders are near a location. Must be answered truthfully with 'Yes' or 'No'.", seekerPrompt: "e.g., Tsim Sha Tsui Station, Tsuen Wan Line, Hong Kong Island, New Territories, station connecting to East Rail Line, station with MTR interchange, station above ground.", icon: MapPin },
   { id: 'q_precision', name: 'Precision', category: 'Precision', cost: 0, hiderCoinsEarned: 10, description: "Yes/no questions to narrow down exact characteristics.", seekerPrompt: "e.g., Does your zone include a park? Near coastal area? District starts with 'S'? Includes a university? Connected to 2+ MTR lines?", icon: Target },
   { id: 'q_relative', name: 'Relative', category: 'Relative', cost: 0, hiderCoinsEarned: 40, description: "Compare a trait of seekers' current position with hiders'.", seekerPrompt: "e.g., Higher elevation? Line with fewer stations? MTR station closer to Central? Nearest MTR station north of us? More residential area?", icon: GitCompareArrows },
-  { id: 'q_photo', name: 'Photo', category: 'Photo', cost: 0, hiderCoinsEarned: 15, description: "Hiders send a real-time photo of something nearby (no direct clues). Disabled if seekers in zone.", seekerPrompt: "e.g., Nearest shop? Tree/park? Something blue? Building >10 floors? Any advertisement? Tallest building seen?", icon: Camera, disabledCondition: (gameState, team) => { /* complex logic: if seekers in hider zone */ return false; } },
+  { id: 'q_photo', name: 'Photo', category: 'Photo', cost: 0, hiderCoinsEarned: 15, description: "Hiders send a real-time photo of something nearby (no direct clues). Disabled if seekers in zone.", seekerPrompt: "e.g., Nearest shop? Tree/park? Something blue? Building >10 floors? Any advertisement? Tallest building seen?", icon: Camera, disabledCondition: (gameState, team) => { return false; } },
   { id: 'q_scan', name: 'Scan', category: 'Scan', cost: 0, hiderCoinsEarned: 20, description: "Ask 'Are you in [specific region]?' (1 per 30 mins). Truthful response within 2 mins.", seekerPrompt: "e.g., Kowloon, Island Line, Southern District.", icon: ScanLine }
 ];
 
@@ -116,3 +116,4 @@ export const NAVIGATION_ITEMS = [
 
 export const MTR_LINES_EXAMPLE = ["Tsuen Wan Line", "Island Line", "Kwun Tong Line", "Tung Chung Line", "East Rail Line"];
 export const DISTRICTS_EXAMPLE = ["Central & Western", "Wan Chai", "Eastern", "Southern", "Yau Tsim Mong", "Sham Shui Po", "Kowloon City", "Wong Tai Sin", "Kwun Tong", "Kwai Tsing", "Tsuen Wan", "Tuen Mun", "Yuen Long", "North", "Tai Po", "Sha Tin", "Sai Kung", "Islands"];
+

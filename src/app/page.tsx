@@ -15,7 +15,7 @@ const roleCards = [
 ];
 
 const infoCards = [
-  { title: 'Game Rules', description: 'Understand the rules of MTR Hide & Seek.', href: '/rules', icon: ScrollText, cta: 'View Rules' },
+  { title: 'Game Rules', description: 'Understand the rules of the game.', href: '/rules', icon: ScrollText, cta: 'View Rules' }, // Updated description
   { title: 'Leaderboard', description: 'Check team scores and hiding times.', href: '/leaderboard', icon: Trophy, cta: 'View Leaderboard' },
 ];
 
@@ -24,7 +24,7 @@ export default function HomePage() {
     <div className="container mx-auto py-8">
       <PageHeader
         title={`Welcome to ${GAME_TITLE}!`}
-        description="Navigate Hong Kong's MTR system in an epic game of hide and seek."
+        description="Embark on an epic game of hide and seek in a bustling city environment." // Updated description
         icon={Users}
       />
 
