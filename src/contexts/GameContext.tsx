@@ -1,13 +1,14 @@
 
 "use client";
 
-import type { GameState, Player, Team, GameRound, TeamRole, AskedQuestion, QuestionOption, ActiveCurseInfo, CurseRule } from '@/lib/types';
-import { MTR_MAP_PLACEHOLDER_URL, INITIAL_COINS_HIDER_START, QUESTION_OPTIONS, CURSE_DICE_OPTIONS, MAX_CURSES_PER_ROUND, GAME_TITLE } from '@/lib/constants';
+import type { GameState, Player, Team, GameRound, AskedQuestion, ActiveCurseInfo } from '@/lib/types';
+import { MTR_MAP_PLACEHOLDER_URL, INITIAL_COINS_HIDER_START, QUESTION_OPTIONS, MAX_CURSES_PER_ROUND } from '@/lib/constants';
 import React, { createContext, useState, useCallback, ReactNode, useEffect, useRef } from 'react';
 import { toast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabaseClient';
 
 const GAME_SESSION_ID = 'current_active_game';
+const GAME_STATE_LOCAL_STORAGE_KEY_PREFIX = 'hideAndSeekGameState_auth_'; // For client-side auth only
 
 const defaultGameState: GameState = {
   players: [],
@@ -15,12 +16,11 @@ const defaultGameState: GameState = {
   currentRound: null,
   gameHistory: [],
   mtrMapUrl: MTR_MAP_PLACEHOLDER_URL,
-  adminPin: "113221", // Default admin PIN
+  adminPin: "113221", 
   hiderPin: undefined,
   seekerPin: undefined,
 };
 
-// Helper to deserialize dates and handle File objects from Supabase data
 const deserializeState = (data: any): GameState => {
   if (!data) return { ...defaultGameState };
 
@@ -39,8 +39,7 @@ const deserializeState = (data: any): GameState => {
           const date = new Date(value);
           newObj[key] = !isNaN(date.getTime()) ? date : value;
         } else if ((key === 'response' || key === 'seekerSubmittedPhoto') && value !== null && typeof value === 'object' && !(value instanceof Date)) {
-          // File objects from Supabase will be null, so we reflect that
-          newObj[key] = null;
+          newObj[key] = null; 
         } else {
           newObj[key] = deserializeDatesAndFiles(value);
         }
@@ -48,23 +47,19 @@ const deserializeState = (data: any): GameState => {
     }
     return newObj;
   };
-
-  const deserializedData = deserializeDatesAndFiles(data);
-  let mergedState = { ...defaultGameState, ...deserializedData };
-
-  // Ensure PINs are correctly handled (empty string from DB means "no PIN")
-  mergedState.adminPin = mergedState.adminPin === "" ? undefined : (mergedState.adminPin ?? defaultGameState.adminPin);
-  mergedState.hiderPin = mergedState.hiderPin === "" ? undefined : mergedState.hiderPin;
-  mergedState.seekerPin = mergedState.seekerPin === "" ? undefined : mergedState.seekerPin;
   
-  return mergedState;
+  const deserialized = deserializeDatesAndFiles(data);
+  let merged = { ...defaultGameState, ...deserialized };
+  merged.adminPin = merged.adminPin === "" ? undefined : (merged.adminPin ?? defaultGameState.adminPin);
+  merged.hiderPin = merged.hiderPin === "" ? undefined : merged.hiderPin;
+  merged.seekerPin = merged.seekerPin === "" ? undefined : merged.seekerPin;
+  return merged;
 };
 
-// Helper to serialize state for Supabase (nullifies File objects)
 const serializeStateForSupabase = (state: GameState): any => {
   return JSON.parse(JSON.stringify(state, (key, value) => {
     if (value instanceof File) {
-      return null; // File objects cannot be directly stringified for JSONB
+      return null; 
     }
     return value;
   }));
@@ -82,8 +77,6 @@ interface GameContextType extends GameState {
   updateHidingTime: (teamId: string, timeSeconds: number) => void;
   updateTeamCoins: (teamId: string, amount: number, operation?: 'add' | 'subtract') => void;
   setMtrMapUrl: (url: string) => void;
-  setCurrentUserRole: (role: TeamRole | null) => void;
-  currentUserRole: TeamRole | null;
   isMobile: boolean;
   askQuestion: (question: AskedQuestion) => void;
   answerQuestion: (questionId: string, response: string | File) => void;
@@ -92,11 +85,9 @@ interface GameContextType extends GameState {
   clearActiveCurse: () => void;
   seekerCompletesCurseAction: (photoFile?: File) => void;
   hiderAcknowledgesSeekerPhoto: () => void;
-  // PIN Management (global PIN values are in GameState)
   setAdminPin: (pin: string) => void;
   setHiderPin: (pin: string) => void;
   setSeekerPin: (pin: string) => void;
-  // Client-specific authentication
   authenticateAdmin: (enteredPin: string) => boolean;
   authenticateHider: (enteredPin: string) => boolean;
   authenticateSeeker: (enteredPin: string) => boolean;
@@ -112,14 +103,11 @@ export const GameContext = createContext<GameContextType | undefined>(undefined)
 
 export const GameProvider = ({ children }: { children: ReactNode }) => {
   const [gameState, setGameStateInternal] = useState<GameState>(defaultGameState);
-  const gameStateRef = useRef(gameState); // Ref to get current gameState in callbacks
+  const gameStateRef = useRef(gameState); 
 
-  const [currentUserRole, setCurrentUserRole] = useState<TeamRole | null>(null);
   const [isMobile, setIsMobile] = useState(false);
   const [isLoadingState, setIsLoadingState] = useState(true);
-  const isUpdatingSupabase = useRef(false);
 
-  // Client-side authentication states (NOT part of shared GameState)
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [isHiderAuthenticated, setIsHiderAuthenticated] = useState(false);
   const [isSeekerAuthenticated, setIsSeekerAuthenticated] = useState(false);
@@ -128,41 +116,38 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     gameStateRef.current = gameState;
   }, [gameState]);
 
-  // Load auth status from localStorage on initial mount (client-side only)
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      setIsAdminAuthenticated(localStorage.getItem('isAdminAuthenticated_mtrGame') === 'true');
-      setIsHiderAuthenticated(localStorage.getItem('isHiderAuthenticated_mtrGame') === 'true');
-      setIsSeekerAuthenticated(localStorage.getItem('isSeekerAuthenticated_mtrGame') === 'true');
+      setIsAdminAuthenticated(localStorage.getItem(GAME_STATE_LOCAL_STORAGE_KEY_PREFIX + 'isAdminAuthenticated') === 'true');
+      setIsHiderAuthenticated(localStorage.getItem(GAME_STATE_LOCAL_STORAGE_KEY_PREFIX + 'isHiderAuthenticated') === 'true');
+      setIsSeekerAuthenticated(localStorage.getItem(GAME_STATE_LOCAL_STORAGE_KEY_PREFIX + 'isSeekerAuthenticated') === 'true');
     }
   }, []);
 
-
   const setGameState = useCallback(async (updater: GameState | ((prevState: GameState) => GameState)) => {
-    setGameStateInternal(prevState => {
-      const newState = typeof updater === 'function' ? updater(prevState) : updater;
-      gameStateRef.current = newState; // Update ref immediately for subsequent calls within same event loop
+    let finalNewState: GameState | null = null;
 
-      // Optimistic update done, now persist to Supabase
-      isUpdatingSupabase.current = true;
-      const serializedData = serializeStateForSupabase(newState);
-      supabase
+    setGameStateInternal(currentInternalState => {
+      const newState = typeof updater === 'function' ? updater(currentInternalState) : updater;
+      gameStateRef.current = newState; 
+      finalNewState = newState; 
+      return newState; 
+    });
+    
+    if (finalNewState) {
+      const serializedData = serializeStateForSupabase(finalNewState);
+      const { error } = await supabase
         .from('game_sessions')
         .update({ game_data: serializedData, updated_at: new Date().toISOString() })
-        .eq('id', GAME_SESSION_ID)
-        .then(({ error }) => {
-          if (error) {
-            console.error("Error updating game state in Supabase:", error);
-            toast({ title: "Sync Error", description: "Failed to save game state to server.", variant: "destructive" });
-          }
-          // Delay slightly before allowing subscription updates to avoid echo processing
-          setTimeout(() => {
-            isUpdatingSupabase.current = false;
-          }, 100); 
-        });
-      return newState;
-    });
-  }, []);
+        .eq('id', GAME_SESSION_ID);
+
+      if (error) {
+        console.error("Error updating game state in Supabase (from setGameState):", error);
+        toast({ title: "Sync Error", description: "Failed to save game state to server.", variant: "destructive" });
+      }
+    }
+  }, [serializeStateForSupabase, supabase, GAME_SESSION_ID, toast]);
+
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
@@ -174,67 +159,103 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const fetchInitialState = async () => {
       setIsLoadingState(true);
+      console.log('[INIT] Fetching initial game state from Supabase...');
       const { data, error } = await supabase
         .from('game_sessions')
-        .select('game_data')
+        .select('game_data, adminPin, hiderPin, seekerPin') // Fetch PINs directly if stored as separate columns
         .eq('id', GAME_SESSION_ID)
         .single();
 
-      if (error && error.code !== 'PGRST116') { // PGRST116: Row not found
-        console.error("Error fetching initial game state:", error);
-        toast({ title: "Load Error", description: "Failed to load game state from server.", variant: "destructive" });
-        setGameStateInternal(deserializeState(null)); // Fallback to default
+      if (error && error.code !== 'PGRST116') { 
+        console.error("[INIT] Error fetching initial game state:", error);
+        setGameStateInternal(deserializeState(null));
       } else if (data && data.game_data) {
-        setGameStateInternal(deserializeState(data.game_data));
+        console.log("[INIT] Game state found in Supabase. Deserializing...");
+        let loadedState = deserializeState(data.game_data);
+        // Ensure PINs from specific columns (if used) or from game_data are correctly set
+        loadedState.adminPin = data.adminPin ?? loadedState.adminPin;
+        loadedState.hiderPin = data.hiderPin ?? loadedState.hiderPin;
+        loadedState.seekerPin = data.seekerPin ?? loadedState.seekerPin;
+        
+        setGameStateInternal(loadedState);
       } else {
-        // No game state found, initialize with default and save to Supabase
-        console.log("No game state found in Supabase, initializing with default and saving.");
+        console.log("[INIT] No game state found. Initializing with default and saving to Supabase.");
         const defaultSerialized = serializeStateForSupabase(defaultGameState);
         const { error: insertError } = await supabase
           .from('game_sessions')
-          .upsert({ id: GAME_SESSION_ID, game_data: defaultSerialized, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+          .upsert({ 
+            id: GAME_SESSION_ID, 
+            game_data: defaultSerialized, 
+            updated_at: new Date().toISOString(),
+            adminPin: defaultGameState.adminPin, // Save default PINs if table has separate columns
+            hiderPin: defaultGameState.hiderPin,
+            seekerPin: defaultGameState.seekerPin
+          }, { onConflict: 'id' });
         if (insertError) {
-            console.error("Error saving initial default state to Supabase:", insertError);
+            console.error("[INIT] Error saving initial default state to Supabase:", insertError);
         }
         setGameStateInternal(defaultGameState);
       }
       setIsLoadingState(false);
+      console.log('[INIT] Initial state loading complete.');
     };
 
     fetchInitialState();
 
+    console.log('[REALTIME] Setting up Supabase subscription...');
     const channel = supabase
       .channel('game_state_updates')
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'game_sessions', filter: `id=eq.${GAME_SESSION_ID}` },
         (payload) => {
-          console.log('Game state updated from Supabase REAL-TIME:', payload.new);
+          console.log('[REALTIME] Received Supabase payload:', payload.eventType, 'at', new Date().toLocaleTimeString());
+          // console.log('[REALTIME] Full payload:', JSON.stringify(payload).substring(0,1000));
+
+
           if (payload.new && (payload.new as any).game_data) {
-             // Only update if the data is different to avoid unnecessary re-renders from own updates
-            if (JSON.stringify(serializeStateForSupabase(gameStateRef.current)) !== JSON.stringify((payload.new as any).game_data)) {
-                const newGameStateFromSupabase = deserializeState((payload.new as any).game_data);
-                setGameStateInternal(newGameStateFromSupabase);
+            const incomingGameData = (payload.new as any).game_data;
+            // console.log('[REALTIME] Incoming game_data (raw):', JSON.stringify(incomingGameData).substring(0, 300) + "...");
+
+            const currentLocalStateForComparison = gameStateRef.current;
+            const serializedCurrentLocalState = serializeStateForSupabase(currentLocalStateForComparison);
+            
+            // console.log('[REALTIME] Current local state (serialized for comparison):', JSON.stringify(serializedCurrentLocalState).substring(0, 300) + "...");
+            
+            if (JSON.stringify(serializedCurrentLocalState) !== JSON.stringify(incomingGameData)) {
+              console.log('[REALTIME] Change detected. Applying update.');
+              const newGameStateFromSupabase = deserializeState(incomingGameData);
+              // console.log('[REALTIME] Deserialized new state to apply:', JSON.stringify(newGameStateFromSupabase).substring(0,300) + "...");
+              // console.log('[REALTIME] Current local state before update (ref):', JSON.stringify(gameStateRef.current).substring(0,300) + "...");
+              setGameStateInternal(newGameStateFromSupabase);
+              // gameStateRef.current will be updated by the useEffect watching `gameState`
             } else {
-                console.log("Received game state from Supabase matches local, skipping update.");
+              console.log("[REALTIME] Echo detected or data is identical. Skipping update.");
             }
+          } else {
+            console.log('[REALTIME] Payload did not contain new.game_data or new was null.');
           }
         }
       )
       .subscribe((status, err) => {
         if (status === 'SUBSCRIBED') {
-          console.log('Successfully subscribed to real-time game updates!');
-        }
-        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          console.error('Real-time subscription error:', status, err);
-          toast({ title: "Real-time Error", description: "Connection to real-time updates failed. Try refreshing.", variant: "destructive" });
+          console.log('[REALTIME] Successfully subscribed to real-time game updates!');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('[REALTIME] Subscription channel error:', err);
+          toast({ title: "Real-time Error", description: `Channel error: ${err?.message}. Try refreshing.`, variant: "destructive" });
+        } else if (status === 'TIMED_OUT') {
+          console.error('[REALTIME] Subscription timed out.');
+          toast({ title: "Real-time Error", description: "Connection timed out. Try refreshing.", variant: "destructive" });
+        } else {
+          console.log('[REALTIME] Subscription status:', status);
         }
       });
 
     return () => {
+      console.log('[REALTIME] Removing Supabase channel subscription.');
       supabase.removeChannel(channel);
     };
-  }, []); // Empty dependency array means this runs once on mount and cleans up on unmount
+  }, [supabase, GAME_SESSION_ID, toast, deserializeState, serializeStateForSupabase]);
 
   const addPlayer = useCallback((name: string): Player => {
     const newPlayer: Player = { id: `player-${Date.now()}`, name };
@@ -285,7 +306,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
 
   const updateTeamRole = useCallback((teamId: string, isHiding: boolean, isSeeking: boolean) => {
     setGameState(prev => {
-       const newTeams = prev.teams.map(team => {
+       let updatedTeams = prev.teams.map(team => {
         if (team.id === teamId) {
           const newRoleTeam = { ...team, isHiding, isSeeking };
           if (isHiding) {
@@ -294,12 +315,12 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
           }
           return newRoleTeam;
         }
-        if (isHiding && team.id !== teamId) { // If setting one team to hider, others cannot be hider
+        if (isHiding && team.id !== teamId) { 
             return {...team, isHiding: false};
         }
         return team;
       });
-      return { ...prev, teams: newTeams };
+      return { ...prev, teams: updatedTeams };
     });
   }, [setGameState]);
 
@@ -309,10 +330,9 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         const updatedTeam = { ...t };
         if (t.isHiding) {
           updatedTeam.cursesUsed = 0;
-          // Hider coins are earned, not reset, unless explicitly set at round start like INITIAL_COINS_HIDER_START
-          updatedTeam.coins = updatedTeam.coins || INITIAL_COINS_HIDER_START;
+          updatedTeam.coins = updatedTeam.coins || INITIAL_COINS_HIDER_START; 
         } else if (t.isSeeking) {
-          // Seekers have unlimited coins for actions, no tracking needed for spending
+          // Seekers have unlimited coins for actions, their coin count is not actively managed for spending
         }
         return updatedTeam;
       });
@@ -347,7 +367,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         teams: teamsWithRoundResets,
       };
     });
-  }, [setGameState]);
+  }, [setGameState, toast]);
 
   const startSeekingPhase = useCallback(() => {
     setGameState(prev => {
@@ -420,22 +440,16 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
                 coins: operation === 'add' ? currentHidingTeamCoins + amount : Math.max(0, currentHidingTeamCoins - amount)
             };
         }
-        // also update seeking teams if relevant for curses or future features
         if (newCurrentRound && newCurrentRound.seekingTeams.some(st => st.id === teamId)) {
           newCurrentRound.seekingTeams = newCurrentRound.seekingTeams.map(st => {
             if (st.id === teamId) {
-              const currentCoins = st.coins || 0;
+              const currentCoins = st.coins || 0; // Seekers don't spend, but if this is for other reasons
               return { ...st, coins: operation === 'add' ? currentCoins + amount : Math.max(0, currentCoins - amount) };
             }
             return st;
           });
         }
-
-        return {
-            ...prev,
-            teams: newTeams,
-            currentRound: newCurrentRound,
-        };
+        return { ...prev, teams: newTeams, currentRound: newCurrentRound };
     });
   }, [setGameState]);
 
@@ -447,10 +461,10 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     setGameState(prev => {
       if (!prev.currentRound || !prev.currentRound.hidingTeam) return prev;
       
-      const questionOption = QUESTION_OPTIONS.find(opt => opt.id === question.questionOptionId);
+      const questionOptionDetails = QUESTION_OPTIONS.find(opt => opt.id === question.questionOptionId);
       let coinsToAward = 0;
-      if (questionOption) {
-        coinsToAward = questionOption.hiderCoinsEarned;
+      if (questionOptionDetails) {
+        coinsToAward = questionOptionDetails.hiderCoinsEarned;
       }
 
       let updatedTeams = [...prev.teams];
@@ -478,11 +492,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         askedQuestions: [...prev.currentRound.askedQuestions, question],
       };
       
-      return {
-        ...prev,
-        currentRound: updatedRound,
-        teams: updatedTeams,
-      };
+      return { ...prev, teams: updatedTeams, currentRound: updatedRound };
     });
   }, [setGameState]);
 
@@ -500,7 +510,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       };
     });
   }, [setGameState]);
-
+  
   const recordCurseUsed = useCallback((hiderTeamId: string) => {
     setGameState(prev => {
       if (!prev.currentRound || !prev.currentRound.hidingTeam || prev.currentRound.hidingTeam.id !== hiderTeamId) {
@@ -518,17 +528,10 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         cursesUsed: (prev.currentRound.hidingTeam.cursesUsed || 0) + 1,
       };
 
-      const newCurrentRound = {
-        ...prev.currentRound,
-        hidingTeam: newCurrentRoundHidingTeam,
-      };
-      return {
-        ...prev,
-        teams: newTeams,
-        currentRound: newCurrentRound,
-      };
+      return { ...prev, teams: newTeams, currentRound: { ...prev.currentRound, hidingTeam: newCurrentRoundHidingTeam } };
     });
   }, [setGameState]);
+
 
   const activateCurse = useCallback((hiderTeamId: string, rolledCurseNumber: number, hiderInputText?: string) => {
     setGameState(prev => {
@@ -540,46 +543,34 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       const activeCurseInfo: ActiveCurseInfo = {
         curseId: rolledCurseNumber,
         startTime: new Date(),
-        resolutionStatus: 'pending_seeker_action',
+        resolutionStatus: 'pending_seeker_action', // Default status
       };
       if (hiderInputText) {
         activeCurseInfo.hiderInputText = hiderInputText;
       }
-
-      const newCurrentRound = {
-        ...prev.currentRound,
-        activeCurse: activeCurseInfo
-      };
-      
-      return {
-        ...prev,
-        currentRound: newCurrentRound,
-      };
+      return { ...prev, currentRound: { ...prev.currentRound, activeCurse: activeCurseInfo } };
     });
-  }, [setGameState]);
+  }, [setGameState, toast]);
 
   const clearActiveCurse = useCallback(() => {
     setGameState(prev => {
       if (!prev.currentRound || !prev.currentRound.activeCurse) return prev;
-      const currentCurseName = CURSE_DICE_OPTIONS.find(c => c.number === prev.currentRound?.activeCurse?.curseId)?.name;
-      toast({ title: "Curse Ended", description: `${currentCurseName || 'The active curse'} is no longer in effect.` });
-      return {
-        ...prev,
-        currentRound: {
-          ...prev.currentRound,
-          activeCurse: null,
-        },
-      };
+      // const currentCurseName = CURSE_DICE_OPTIONS.find(c => c.number === prev.currentRound?.activeCurse?.curseId)?.name;
+      // toast({ title: "Curse Ended", description: `${currentCurseName || 'The active curse'} is no longer in effect.` });
+      return { ...prev, currentRound: { ...prev.currentRound, activeCurse: null } };
     });
   }, [setGameState]);
 
   const seekerCompletesCurseAction = useCallback((photoFile?: File) => {
     setGameState(prev => {
       if (!prev.currentRound || !prev.currentRound.activeCurse) return prev;
-      const curseDetails = CURSE_DICE_OPTIONS.find(c => c.number === prev.currentRound!.activeCurse!.curseId);
-      if (!curseDetails) return prev;
+      const curseDetails = QUESTION_OPTIONS.find(q => q.id === `curse-${prev.currentRound!.activeCurse!.curseId}`); // This needs to be CURSE_DICE_OPTIONS
+      const actualCurseDetails = CURSE_DICE_OPTIONS.find(c => c.number === prev.currentRound!.activeCurse!.curseId);
 
-      if (curseDetails.requiresSeekerAction === 'photo' && photoFile) {
+
+      if (!actualCurseDetails) return prev;
+
+      if (actualCurseDetails.requiresSeekerAction === 'photo' && photoFile) {
         return {
           ...prev,
           currentRound: {
@@ -591,15 +582,12 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
             },
           },
         };
-      } else if (curseDetails.requiresSeekerAction === 'confirmation') {
-        const currentCurseName = curseDetails.name;
-        toast({ title: "Curse Resolved", description: `${currentCurseName || 'The active curse'} has been resolved by seekers.` });
-        return {
-            ...prev, // Spread previous state
-            currentRound: { ...prev.currentRound, activeCurse: null } // Only update currentRound and its activeCurse
-        };
+      } else if (actualCurseDetails.requiresSeekerAction === 'confirmation') {
+        // const currentCurseName = actualCurseDetails.name;
+        // toast({ title: "Curse Resolved", description: `${currentCurseName || 'The active curse'} has been resolved by seekers.` });
+        return { ...prev, currentRound: { ...prev.currentRound, activeCurse: null } };
       }
-      return prev;
+      return prev; // Should not happen if logic is correct
     });
   }, [setGameState]);
 
@@ -609,91 +597,81 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         toast({ title: "Error", description: "No seeker photo to acknowledge or no active curse.", variant: "destructive" });
         return prev;
       }
-      const currentCurseName = CURSE_DICE_OPTIONS.find(c => c.number === prev.currentRound?.activeCurse?.curseId)?.name;
-      toast({ title: "Curse Resolved", description: `${currentCurseName || 'The photo curse'} has been acknowledged and resolved.` });
-      return {
-        ...prev,
-        currentRound: { ...prev.currentRound, activeCurse: null }
-      };
+      // const currentCurseName = CURSE_DICE_OPTIONS.find(c => c.number === prev.currentRound?.activeCurse?.curseId)?.name;
+      // toast({ title: "Curse Resolved", description: `${currentCurseName || 'The photo curse'} has been acknowledged and resolved.` });
+      return { ...prev, currentRound: { ...prev.currentRound, activeCurse: null } };
     });
-  }, [setGameState]);
-
-  // --- Client-side Authentication Logic ---
+  }, [setGameState, toast]);
+  
   const setAdminPinCb = useCallback((pin: string) => {
-    const newPin = pin === "" ? undefined : pin;
-    if (gameStateRef.current.adminPin !== newPin) {
-      setIsAdminAuthenticated(false);
-      if (typeof window !== 'undefined') localStorage.removeItem('isAdminAuthenticated_mtrGame');
-    }
+    const newPin = pin.trim() === "" ? undefined : pin.trim();
     setGameState(prev => ({ ...prev, adminPin: newPin }));
+    setIsAdminAuthenticated(false); 
+    localStorage.removeItem(GAME_STATE_LOCAL_STORAGE_KEY_PREFIX + 'isAdminAuthenticated');
     toast({ title: "Admin PIN Updated", description: `Admin access PIN has been ${newPin === undefined ? "cleared" : "set"}. You may need to re-login.` });
-  }, [setGameState]);
+  }, [setGameState, toast]);
 
   const setHiderPinCb = useCallback((pin: string) => {
-    const newPin = pin === "" ? undefined : pin;
-     if (gameStateRef.current.hiderPin !== newPin) {
-        setIsHiderAuthenticated(false);
-        if (typeof window !== 'undefined') localStorage.removeItem('isHiderAuthenticated_mtrGame');
-    }
+    const newPin = pin.trim() === "" ? undefined : pin.trim();
     setGameState(prev => ({ ...prev, hiderPin: newPin }));
+    setIsHiderAuthenticated(false);
+    localStorage.removeItem(GAME_STATE_LOCAL_STORAGE_KEY_PREFIX + 'isHiderAuthenticated');
     toast({ title: "Hider PIN Updated", description: `Hider panel PIN has been ${newPin === undefined ? "cleared" : "set"}. Access may be revoked until re-login.` });
-  }, [setGameState]);
+  }, [setGameState, toast]);
 
   const setSeekerPinCb = useCallback((pin: string) => {
-    const newPin = pin === "" ? undefined : pin;
-    if (gameStateRef.current.seekerPin !== newPin) {
-        setIsSeekerAuthenticated(false);
-        if (typeof window !== 'undefined') localStorage.removeItem('isSeekerAuthenticated_mtrGame');
-    }
+    const newPin = pin.trim() === "" ? undefined : pin.trim();
     setGameState(prev => ({ ...prev, seekerPin: newPin }));
+    setIsSeekerAuthenticated(false);
+    localStorage.removeItem(GAME_STATE_LOCAL_STORAGE_KEY_PREFIX + 'isSeekerAuthenticated');
     toast({ title: "Seeker PIN Updated", description: `Seeker panel PIN has been ${newPin === undefined ? "cleared" : "set"}. Access may be revoked until re-login.` });
-  }, [setGameState]);
+  }, [setGameState, toast]);
 
   const authenticateAdmin = useCallback((enteredPin: string): boolean => {
-    const effectiveAdminPin = gameStateRef.current.adminPin ?? defaultGameState.adminPin; // Use default if current is undefined
-    if (effectiveAdminPin === enteredPin) {
+    const effectiveAdminPin = gameStateRef.current.adminPin ?? defaultGameState.adminPin;
+    if (effectiveAdminPin && effectiveAdminPin === enteredPin) {
       setIsAdminAuthenticated(true);
-      if (typeof window !== 'undefined') localStorage.setItem('isAdminAuthenticated_mtrGame', 'true');
+      localStorage.setItem(GAME_STATE_LOCAL_STORAGE_KEY_PREFIX + 'isAdminAuthenticated', 'true');
       return true;
     }
     return false;
-  }, []); // gameStateRef is stable
+  }, []); 
 
   const authenticateHider = useCallback((enteredPin: string): boolean => {
     if (gameStateRef.current.hiderPin && gameStateRef.current.hiderPin === enteredPin) {
       setIsHiderAuthenticated(true);
-      if (typeof window !== 'undefined') localStorage.setItem('isHiderAuthenticated_mtrGame', 'true');
+      localStorage.setItem(GAME_STATE_LOCAL_STORAGE_KEY_PREFIX + 'isHiderAuthenticated', 'true');
       return true;
     }
     return false;
-  }, []); // gameStateRef is stable
+  }, []); 
 
   const authenticateSeeker = useCallback((enteredPin: string): boolean => {
     if (gameStateRef.current.seekerPin && gameStateRef.current.seekerPin === enteredPin) {
       setIsSeekerAuthenticated(true);
-      if (typeof window !== 'undefined') localStorage.setItem('isSeekerAuthenticated_mtrGame', 'true');
+      localStorage.setItem(GAME_STATE_LOCAL_STORAGE_KEY_PREFIX + 'isSeekerAuthenticated', 'true');
       return true;
     }
     return false;
-  }, []); // gameStateRef is stable
+  }, []);
 
   const logoutAdmin = useCallback(() => {
     setIsAdminAuthenticated(false);
-    if (typeof window !== 'undefined') localStorage.removeItem('isAdminAuthenticated_mtrGame');
+    localStorage.removeItem(GAME_STATE_LOCAL_STORAGE_KEY_PREFIX + 'isAdminAuthenticated');
     toast({ title: "Admin Logged Out", description: "Admin panel access has been revoked for this session." });
-  }, []);
+  }, [toast]);
 
   const logoutHider = useCallback(() => {
     setIsHiderAuthenticated(false);
-    if (typeof window !== 'undefined') localStorage.removeItem('isHiderAuthenticated_mtrGame');
+    localStorage.removeItem(GAME_STATE_LOCAL_STORAGE_KEY_PREFIX + 'isHiderAuthenticated');
     toast({ title: "Hider Logged Out", description: "Hider panel access has been revoked for this session." });
-  }, []);
+  }, [toast]);
 
   const logoutSeeker = useCallback(() => {
     setIsSeekerAuthenticated(false);
-    if (typeof window !== 'undefined') localStorage.removeItem('isSeekerAuthenticated_mtrGame');
+    localStorage.removeItem(GAME_STATE_LOCAL_STORAGE_KEY_PREFIX + 'isSeekerAuthenticated');
     toast({ title: "Seeker Logged Out", description: "Seeker panel access has been revoked for this session." });
-  }, []);
+  }, [toast]);
 
 
   if (isLoadingState) {
@@ -702,7 +680,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
 
   return (
     <GameContext.Provider value={{
-      ...gameStateRef.current, // Provide current game state from ref
+      ...gameStateRef.current, 
       addPlayer,
       createTeam,
       assignPlayerToTeam,
@@ -714,8 +692,6 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       updateHidingTime,
       updateTeamCoins,
       setMtrMapUrl,
-      currentUserRole,
-      setCurrentUserRole,
       isMobile,
       askQuestion,
       answerQuestion,
@@ -724,11 +700,9 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       clearActiveCurse,
       seekerCompletesCurseAction,
       hiderAcknowledgesSeekerPhoto,
-      // PIN Management (these modify gameState, which then goes to Supabase)
       setAdminPin: setAdminPinCb,
       setHiderPin: setHiderPinCb,
       setSeekerPin: setSeekerPinCb,
-      // Client-specific authentication
       authenticateAdmin,
       authenticateHider,
       authenticateSeeker,
