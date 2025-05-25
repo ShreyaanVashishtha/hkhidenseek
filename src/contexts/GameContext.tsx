@@ -1,13 +1,13 @@
 
 "use client";
 
-import type { GameState, Player, Team, GameRound, AskedQuestion, ActiveCurseInfo } from '@/lib/types';
-import { MTR_MAP_PLACEHOLDER_URL, INITIAL_COINS_HIDER_START, QUESTION_OPTIONS, CURSE_DICE_OPTIONS, GAME_TITLE } from '@/lib/constants';
+import type { GameState, Player, Team, GameRound, AskedQuestion, ActiveCurseInfo, CurseRule } from '@/lib/types';
+import { MTR_MAP_PLACEHOLDER_URL, INITIAL_COINS_HIDER_START, QUESTION_OPTIONS, CURSE_DICE_OPTIONS, MAX_CURSES_PER_ROUND, GAME_TITLE } from '@/lib/constants';
 import React, { createContext, useState, useCallback, ReactNode, useEffect, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/lib/supabaseClient'; 
+import { supabase } from '@/lib/supabaseClient';
 
-const GAME_SESSION_ID = 'current_active_game'; 
+const GAME_SESSION_ID = 'current_active_game';
 const LOCAL_STORAGE_AUTH_PREFIX = `${GAME_TITLE.replace(/\s+/g, '_')}_auth_status_`;
 
 const defaultGameState: GameState = {
@@ -16,12 +16,11 @@ const defaultGameState: GameState = {
   currentRound: null,
   gameHistory: [],
   mtrMapUrl: MTR_MAP_PLACEHOLDER_URL,
-  adminPin: "113221", 
+  adminPin: "113221",
   hiderPin: undefined,
   seekerPin: undefined,
 };
 
-// Helper to deserialize dates from JSON string
 const deserializeState = (data: any): GameState => {
   if (!data) return { ...defaultGameState };
 
@@ -40,10 +39,7 @@ const deserializeState = (data: any): GameState => {
           const date = new Date(value);
           newObj[key] = !isNaN(date.getTime()) ? date : value;
         } else if (key === 'seekerSubmittedPhoto' && value !== null && typeof value === 'object' && !(value instanceof Date) && !(value instanceof File) ) {
-           // This case handles if an old non-File, non-string representation of seekerSubmittedPhoto was in DB.
-           // seekerSubmittedPhoto is handled as a local File, then its URL (if applicable for curses) would be stored as string.
-           // For AskedQuestion, response is already a string (URL or text).
-           newObj[key] = null; 
+           newObj[key] = null;
         } else {
           newObj[key] = deserializeDates(value);
         }
@@ -51,11 +47,10 @@ const deserializeState = (data: any): GameState => {
     }
     return newObj;
   };
-  
+
   let deserialized = deserializeDates(data);
   let merged = { ...defaultGameState, ...deserialized };
-  
-  // Ensure PINs are correctly undefined if empty string was stored, or default admin PIN.
+
   merged.adminPin = merged.adminPin === "" ? undefined : (merged.adminPin ?? defaultGameState.adminPin);
   merged.hiderPin = merged.hiderPin === "" ? undefined : merged.hiderPin;
   merged.seekerPin = merged.seekerPin === "" ? undefined : merged.seekerPin;
@@ -63,57 +58,48 @@ const deserializeState = (data: any): GameState => {
   return merged;
 };
 
-
-// Helper to serialize state for Supabase (handles File objects by not including them)
 const serializeStateForSupabase = (state: GameState): any => {
   return JSON.parse(JSON.stringify(state, (key, value) => {
-    if (key === 'seekerSubmittedPhoto' && value instanceof File) {
-      return null; // Don't stringify File objects for Supabase JSON
+    if ((key === 'seekerSubmittedPhoto' || key === 'responsePhoto') && value instanceof File) {
+      return undefined; // Don't include File objects in JSON for Supabase
     }
-    // AskedQuestion.response is already a string (URL or text)
     return value;
   }));
 };
 
-// Helper to upload photo to Supabase Storage
-const uploadPhotoToSupabaseStorage = async (file: File, pathPrefix: string = 'public/question_responses'): Promise<string | null> => {
-  const { toast } = useToast(); // Cannot use useToast directly here, needs to be passed or accessed differently.
-                                // For now, we'll rely on console.error and let answerQuestion handle toast.
-
+const uploadPhotoToSupabaseStorage = async (file: File, pathPrefix: string): Promise<string | null> => {
   try {
     const filePath = `${pathPrefix}/${Date.now()}-${file.name.replace(/\s+/g, '_')}`;
-    console.log('[UPLOAD_PHOTO] Attempting to upload to:', filePath);
+    console.log('[UPLOAD_PHOTO] Attempting to upload to Supabase Storage path:', filePath);
+
     const { data, error } = await supabase.storage
-      .from('game-assets') 
-      .upload(filePath, file);
+      .from('game-assets')
+      .upload(filePath, file, {
+        cacheControl: '3600',
+        upsert: false,
+      });
 
     if (error) {
-      console.error("[UPLOAD_PHOTO] Error uploading photo to Supabase Storage:", error);
-      // toast({ title: "Upload Failed", description: `Storage error: ${error.message}`, variant: "destructive" });
+      console.error("[UPLOAD_PHOTO] Supabase Storage upload error:", error);
       return null;
     }
     if (!data) {
-      console.error("[UPLOAD_PHOTO] Upload to Supabase Storage returned no data object.");
-      // toast({ title: "Upload Failed", description: "Storage upload returned no data.", variant: "destructive" });
+      console.error("[UPLOAD_PHOTO] Supabase Storage upload returned no data object.");
       return null;
     }
 
-    console.log('[UPLOAD_PHOTO] Upload successful, data path:', data.path);
-    // data.path is the path within the bucket. For public URL, we use the original filePath.
-    const { data: urlData } = supabase.storage.from('game-assets').getPublicUrl(filePath);
-    console.log('[UPLOAD_PHOTO] Public URL data object:', urlData);
+    console.log('[UPLOAD_PHOTO] Supabase Storage upload successful, data path:', data.path);
+    const { data: urlData } = supabase.storage.from('game-assets').getPublicUrl(data.path); // Use data.path from upload result
 
     if (!urlData || !urlData.publicUrl) {
       console.error("[UPLOAD_PHOTO] Error getting public URL: urlData or publicUrl is null/undefined.", urlData);
-      // toast({ title: "Upload Failed", description: "Could not retrieve public URL for the photo.", variant: "destructive" });
       return null;
     }
-    
+
     console.log('[UPLOAD_PHOTO] Successfully retrieved public URL:', urlData.publicUrl);
     return urlData.publicUrl;
   } catch (e) {
     console.error("[UPLOAD_PHOTO] Exception during photo upload:", e);
-    // toast({ title: "Upload Exception", description: "An unexpected error occurred during upload.", variant: "destructive" });
     return null;
   }
 };
@@ -135,11 +121,11 @@ interface GameContextType extends GameState {
   askQuestion: (question: AskedQuestion) => void;
   answerQuestion: (questionId: string, response: string | File) => Promise<void>;
   activateCurse: (hiderTeamId: string, rolledCurseNumber: number, hiderInputText?: string) => void;
-  recordCurseUsed: (hiderTeamId: string) => void; 
+  recordCurseUsed: (hiderTeamId: string) => void;
   clearActiveCurse: () => void;
-  seekerCompletesCurseAction: (photoFile?: File) => void;
+  seekerCompletesCurseAction: (photoFile?: File) => Promise<void>;
   hiderAcknowledgesSeekerPhoto: () => void;
-  
+
   setAdminPinCtx: (pin: string) => void;
   setHiderPinCtx: (pin: string) => void;
   setSeekerPinCtx: (pin: string) => void;
@@ -156,19 +142,16 @@ interface GameContextType extends GameState {
 
 export const GameContext = createContext<GameContextType | undefined>(undefined);
 
-
 export const GameProvider = ({ children }: { children: ReactNode }) => {
   const [gameStateInternal, setGameStateInternal] = useState<GameState>(defaultGameState);
-  const gameStateRef = useRef(gameStateInternal); 
-
+  const gameStateRef = useRef(gameStateInternal);
   const [isMobile, setIsMobile] = useState(false);
   const [isLoadingState, setIsLoadingState] = useState(true);
 
-  // Client-specific authentication state
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [isHiderAuthenticated, setIsHiderAuthenticated] = useState(false);
   const [isSeekerAuthenticated, setIsSeekerAuthenticated] = useState(false);
-  
+
   const { toast } = useToast();
 
   useEffect(() => {
@@ -180,28 +163,30 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
 
     setGameStateInternal(currentInternalState => {
       const newState = typeof updater === 'function' ? updater(currentInternalState) : updater;
-      gameStateRef.current = newState; 
+      gameStateRef.current = newState;
       finalNewState = newState;
-      console.log('[SET_GAME_STATE] Local state updated. Sending to Supabase. Admin PIN:', finalNewState?.adminPin);
-      return newState; 
+      console.log('[SET_GAME_STATE] Local state updated. Admin PIN in new state:', finalNewState?.adminPin);
+      return newState;
     });
-    
+
     if (finalNewState) {
       const serializedData = serializeStateForSupabase(finalNewState);
-      console.log('[SYNC_UP] Data being sent to Supabase:', JSON.stringify(serializedData, null, 2));
+      console.log('[SYNC_UP] Attempting to update Supabase with state. Admin PIN:', finalNewState.adminPin);
+      // console.log('[SYNC_UP] Data being sent to Supabase:', JSON.stringify(serializedData).substring(0, 500) + "...");
+
       const { error } = await supabase
         .from('game_sessions')
         .update({ game_data: serializedData, updated_at: new Date().toISOString() })
         .eq('id', GAME_SESSION_ID);
 
       if (error) {
-        console.error("Error updating game state in Supabase:", error);
+        console.error("[SYNC_UP] Error updating game state in Supabase:", error);
         toast({ title: "Sync Error", description: `Failed to save game state: ${error.message}`, variant: "destructive" });
       } else {
         // console.log("[SYNC_UP] Supabase update successful.");
       }
     }
-  }, [toast]); 
+  }, [toast]);
 
   useEffect(() => {
     const fetchInitialState = async () => {
@@ -213,38 +198,33 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
           .eq('id', GAME_SESSION_ID)
           .single();
 
-        if (error && error.code !== 'PGRST116') { 
-          console.error("[INIT] Error fetching initial game state:", error);
+        if (error && error.code !== 'PGRST116') {
+          console.error("[INIT] Error fetching initial game state from Supabase:", error);
           toast({ title: "Database Error", description: `Failed to load game: ${error.message}`, variant: "destructive" });
-          setGameStateInternal(defaultGameState); 
+          setGameStateInternal(defaultGameState);
           gameStateRef.current = defaultGameState;
           const defaultSerialized = serializeStateForSupabase(defaultGameState);
-          console.log('[INIT] Attempting to upsert default state to Supabase due to fetch error.');
           await supabase.from('game_sessions').upsert({
             id: GAME_SESSION_ID,
-            game_data: defaultSerialized, // only game_data
+            game_data: defaultSerialized,
             updated_at: new Date().toISOString()
           }, { onConflict: 'id' });
 
         } else if (data && data.game_data) {
           console.log("[INIT] Game state found in Supabase. Deserializing...");
           const loadedState = deserializeState(data.game_data);
-          if (loadedState.adminPin === undefined && defaultGameState.adminPin) {
-             loadedState.adminPin = defaultGameState.adminPin;
-          }
-          setGameStateInternal(loadedState); 
+          setGameStateInternal(loadedState);
           gameStateRef.current = loadedState;
-        } else { 
+        } else {
           console.log("[INIT] No game state found or empty game_data. Initializing with default and saving to Supabase.");
-          const initializedState = { ...defaultGameState };
-          setGameStateInternal(initializedState); 
-          gameStateRef.current = initializedState;
-          const defaultSerialized = serializeStateForSupabase(initializedState);
+          setGameStateInternal(defaultGameState);
+          gameStateRef.current = defaultGameState;
+          const defaultSerialized = serializeStateForSupabase(defaultGameState);
           const { error: insertError } = await supabase
             .from('game_sessions')
             .upsert({
               id: GAME_SESSION_ID,
-              game_data: defaultSerialized, // only game_data
+              game_data: defaultSerialized,
               updated_at: new Date().toISOString()
             }, { onConflict: 'id' });
           if (insertError) {
@@ -255,21 +235,20 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       } catch (e) {
         console.error("[INIT] Critical error during fetchInitialState:", e);
         toast({ title: "Initialization Error", description: "Could not initialize game state.", variant: "destructive" });
-        setGameStateInternal(defaultGameState); 
+        setGameStateInternal(defaultGameState);
         gameStateRef.current = defaultGameState;
       } finally {
-        setIsLoadingState(false); 
+        setIsLoadingState(false);
         console.log('[INIT] Initial state loading process complete. Admin PIN in context:', gameStateRef.current.adminPin);
       }
     };
-    
-    // Load local auth statuses
+
     if (typeof window !== 'undefined') {
-        setIsAdminAuthenticated(localStorage.getItem(LOCAL_STORAGE_AUTH_PREFIX + 'admin') === 'true');
-        setIsHiderAuthenticated(localStorage.getItem(LOCAL_STORAGE_AUTH_PREFIX + 'hider') === 'true');
-        setIsSeekerAuthenticated(localStorage.getItem(LOCAL_STORAGE_AUTH_PREFIX + 'seeker') === 'true');
+      setIsAdminAuthenticated(localStorage.getItem(LOCAL_STORAGE_AUTH_PREFIX + 'admin') === 'true');
+      setIsHiderAuthenticated(localStorage.getItem(LOCAL_STORAGE_AUTH_PREFIX + 'hider') === 'true');
+      setIsSeekerAuthenticated(localStorage.getItem(LOCAL_STORAGE_AUTH_PREFIX + 'seeker') === 'true');
     }
-    
+
     fetchInitialState();
 
     console.log('[REALTIME] Setting up Supabase subscription...');
@@ -283,12 +262,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
           if (payload.new && (payload.new as any).game_data) {
             const incomingGameData = (payload.new as any).game_data;
             console.log('[REALTIME] Incoming game_data. Admin PIN:', incomingGameData.adminPin);
-            
             const newGameStateFromSupabase = deserializeState(incomingGameData);
-            console.log('[REALTIME] Current local state before update (ref):', JSON.stringify(gameStateRef.current, null, 2).substring(0, 300) + "...");
-            console.log('[REALTIME] Incoming state from Supabase:', JSON.stringify(newGameStateFromSupabase, null, 2).substring(0, 300) + "...");
-
-            setGameStateInternal(newGameStateFromSupabase); 
+            setGameStateInternal(newGameStateFromSupabase);
             console.log('[REALTIME] Local state updated from Supabase. New Admin PIN in context:', newGameStateFromSupabase.adminPin, 'New currentRound status:', newGameStateFromSupabase.currentRound?.status);
           } else {
             console.log('[REALTIME] Payload did not contain new.game_data or new was null.');
@@ -315,9 +290,9 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
     if (typeof window !== 'undefined') {
-        checkMobile();
-        window.addEventListener('resize', checkMobile);
-        return () => window.removeEventListener('resize', checkMobile);
+      checkMobile();
+      window.addEventListener('resize', checkMobile);
+      return () => window.removeEventListener('resize', checkMobile);
     }
   }, []);
 
@@ -370,19 +345,19 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
 
   const updateTeamRole = useCallback((teamId: string, isHiding: boolean, isSeeking: boolean) => {
     setGameState(prev => {
-       let updatedTeams = prev.teams.map(team => {
+      let updatedTeams = prev.teams.map(team => {
         if (team.id === teamId) {
           const newRoleTeam = { ...team, isHiding, isSeeking };
           if (isHiding) {
-             newRoleTeam.coins = team.coins === 0 && INITIAL_COINS_HIDER_START === 0 ? 0 : (team.coins || INITIAL_COINS_HIDER_START);
+            newRoleTeam.coins = team.coins === 0 && INITIAL_COINS_HIDER_START === 0 ? 0 : (team.coins || INITIAL_COINS_HIDER_START);
             newRoleTeam.cursesUsed = 0;
           } else if (isSeeking) {
-            // Seeker coins managed by unlimited coins logic (no direct cost)
+            // Seeker coins are free
           }
           return newRoleTeam;
         }
-        if (isHiding && team.id !== teamId) { 
-            return {...team, isHiding: false};
+        if (isHiding && team.id !== teamId) {
+          return { ...team, isHiding: false };
         }
         return team;
       });
@@ -396,7 +371,9 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         const updatedTeam = { ...t };
         if (t.isHiding) {
           updatedTeam.cursesUsed = 0;
-          updatedTeam.coins = updatedTeam.coins || INITIAL_COINS_HIDER_START; 
+          updatedTeam.coins = updatedTeam.coins || INITIAL_COINS_HIDER_START;
+        } else if (t.isSeeking) {
+          updatedTeam.coins = 0; // Seekers start with 0 coins per rules (unlimited asking)
         }
         return updatedTeam;
       });
@@ -419,7 +396,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         hidingTeam: { ...hidingTeamForRound },
         seekingTeams: seekingTeamsForRound.map(st => ({ ...st })),
         startTime: roundStartTime,
-        phaseStartTime: roundStartTime, 
+        phaseStartTime: roundStartTime,
         status: 'hiding-phase',
         askedQuestions: [],
         activeCurse: null,
@@ -428,7 +405,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       return {
         ...prev,
         currentRound: newRound,
-        teams: teamsWithRoundResets, 
+        teams: teamsWithRoundResets,
       };
     });
   }, [setGameState, toast]);
@@ -443,7 +420,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         currentRound: {
           ...prev.currentRound,
           status: 'seeking-phase',
-          phaseStartTime: new Date(), 
+          phaseStartTime: new Date(),
         },
       };
     });
@@ -453,7 +430,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     setGameState(prev => {
       if (!prev.currentRound) return prev;
       const finishedRound: GameRound = { ...prev.currentRound, endTime: new Date(), status: 'completed' };
-      
+
       const updatedTeams = prev.teams.map(team => {
         if (team.id === finishedRound.hidingTeam?.id && finishedRound.phaseStartTime && prev.currentRound?.status === 'seeking-phase') {
           const hideEndTime = finishedRound.endTime || new Date();
@@ -479,32 +456,44 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       ...prev,
       teams: prev.teams.map(team =>
         team.id === teamId && timeSeconds > team.hidingTimeSeconds
-        ? { ...team, hidingTimeSeconds: timeSeconds }
-        : team
+          ? { ...team, hidingTimeSeconds: timeSeconds }
+          : team
       ),
     }));
   }, [setGameState]);
 
   const updateTeamCoins = useCallback((teamId: string, amount: number, operation: 'add' | 'subtract' = 'add') => {
     setGameState(prev => {
-        const newTeams = prev.teams.map(team => {
-            if (team.id === teamId) {
-                const currentCoins = team.coins || 0;
-                const newCoins = operation === 'add' ? currentCoins + amount : Math.max(0, currentCoins - amount);
-                return { ...team, coins: newCoins };
-            }
-            return team;
-        });
-
-        let newCurrentRound = prev.currentRound ? { ...prev.currentRound } : null;
-        if (newCurrentRound && newCurrentRound.hidingTeam?.id === teamId) {
-            const currentHidingTeamCoins = newCurrentRound.hidingTeam.coins || 0;
-            newCurrentRound.hidingTeam = {
-                ...newCurrentRound.hidingTeam,
-                coins: operation === 'add' ? currentHidingTeamCoins + amount : Math.max(0, currentHidingTeamCoins - amount)
-            };
+      const newTeams = prev.teams.map(team => {
+        if (team.id === teamId) {
+          const currentCoins = team.coins || 0;
+          const newCoins = operation === 'add' ? currentCoins + amount : Math.max(0, currentCoins - amount);
+          return { ...team, coins: newCoins };
         }
-        return { ...prev, teams: newTeams, currentRound: newCurrentRound };
+        return team;
+      });
+
+      let newCurrentRound = prev.currentRound ? { ...prev.currentRound } : null;
+      if (newCurrentRound?.hidingTeam?.id === teamId) {
+        const currentHidingTeamCoins = newCurrentRound.hidingTeam.coins || 0;
+        newCurrentRound.hidingTeam = {
+          ...newCurrentRound.hidingTeam,
+          coins: operation === 'add' ? currentHidingTeamCoins + amount : Math.max(0, currentHidingTeamCoins - amount)
+        };
+      }
+      if (newCurrentRound?.seekingTeams) {
+          newCurrentRound.seekingTeams = newCurrentRound.seekingTeams.map(st => {
+              if (st.id === teamId) {
+                  const currentSeekingTeamCoins = st.coins || 0;
+                  return {
+                      ...st,
+                      coins: operation === 'add' ? currentSeekingTeamCoins + amount : Math.max(0, currentSeekingTeamCoins - amount)
+                  };
+              }
+              return st;
+          });
+      }
+      return { ...prev, teams: newTeams, currentRound: newCurrentRound };
     });
   }, [setGameState]);
 
@@ -515,14 +504,14 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   const askQuestion = useCallback((question: AskedQuestion) => {
     setGameState(prev => {
       if (!prev.currentRound || !prev.currentRound.hidingTeam) return prev;
-      
+
       const questionOptionDetails = QUESTION_OPTIONS.find(opt => opt.id === question.questionOptionId);
       let coinsToAward = 0;
       if (questionOptionDetails) {
         coinsToAward = questionOptionDetails.hiderCoinsEarned;
       }
 
-      let updatedTeams = [...prev.teams]; 
+      let updatedTeams = [...prev.teams];
       let updatedHidingTeamInRound = prev.currentRound.hidingTeam ? { ...prev.currentRound.hidingTeam } : null;
 
       if (coinsToAward > 0 && updatedHidingTeamInRound) {
@@ -534,19 +523,19 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
           }
           return team;
         });
-        
+
         updatedHidingTeamInRound = {
-            ...updatedHidingTeamInRound,
-            coins: (updatedHidingTeamInRound.coins || 0) + coinsToAward
+          ...updatedHidingTeamInRound,
+          coins: (updatedHidingTeamInRound.coins || 0) + coinsToAward
         };
       }
-      
+
       const updatedRound = {
         ...prev.currentRound,
-        hidingTeam: updatedHidingTeamInRound, 
+        hidingTeam: updatedHidingTeamInRound,
         askedQuestions: [...prev.currentRound.askedQuestions, question],
       };
-      
+
       return { ...prev, teams: updatedTeams, currentRound: updatedRound };
     });
   }, [setGameState]);
@@ -565,9 +554,9 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         toast({ title: "Photo Uploaded!", description: "Your photo response has been sent." });
         console.log(`[ANSWER_QUESTION] Photo uploaded for question ${questionId}, URL: ${uploadedUrl}`);
       } else {
-        finalResponse = "[Photo Upload Failed]"; 
-        toast({ title: "Upload Failed", description: "Could not upload photo. Please try again.", variant: "destructive" });
-        console.error(`[ANSWER_QUESTION] Photo upload failed for question ${questionId}`);
+        finalResponse = "[Photo Upload Failed]";
+        toast({ title: "Upload Failed", description: "Could not upload photo. Please try again or check Supabase Storage policies.", variant: "destructive" });
+        console.error(`[ANSWER_QUESTION] Photo upload failed for question ${questionId}. Check Supabase Storage & policies.`);
       }
     }
 
@@ -578,7 +567,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         const updatedAskedQuestions = prev.currentRound.askedQuestions.map(q =>
           q.id === questionId ? { ...q, response: finalResponse } : q
         );
-        console.log('[ANSWER_QUESTION] Updated askedQuestions array:', updatedAskedQuestions.find(q => q.id === questionId));
+        const updatedQuestion = updatedAskedQuestions.find(q => q.id === questionId);
+        console.log('[ANSWER_QUESTION] Updated question in local state before Supabase sync:', updatedQuestion);
         return {
           ...prev,
           currentRound: {
@@ -588,10 +578,10 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         };
       });
     } else {
-        console.error(`[ANSWER_QUESTION] Final response for question ${questionId} is undefined. This should not happen.`);
+      console.error(`[ANSWER_QUESTION] Final response for question ${questionId} is undefined. This should not happen.`);
     }
   }, [setGameState, toast]);
-  
+
   const recordCurseUsed = useCallback((hiderTeamId: string) => {
     setGameState(prev => {
       if (!prev.currentRound || !prev.currentRound.hidingTeam || prev.currentRound.hidingTeam.id !== hiderTeamId) {
@@ -616,14 +606,14 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   const activateCurse = useCallback((hiderTeamId: string, rolledCurseNumber: number, hiderInputText?: string) => {
     setGameState(prev => {
       if (!prev.currentRound || !prev.currentRound.hidingTeam || prev.currentRound.hidingTeam.id !== hiderTeamId) {
-        toast({title: "Error", description: "Cannot activate curse. Hiding team mismatch or no active round.", variant: "destructive"})
+        toast({ title: "Error", description: "Cannot activate curse. Hiding team mismatch or no active round.", variant: "destructive" })
         return prev;
       }
-      
+
       const activeCurseInfo: ActiveCurseInfo = {
         curseId: rolledCurseNumber,
         startTime: new Date(),
-        resolutionStatus: 'pending_seeker_action', 
+        resolutionStatus: 'pending_seeker_action',
       };
       if (hiderInputText) {
         activeCurseInfo.hiderInputText = hiderInputText;
@@ -640,52 +630,50 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     });
   }, [setGameState]);
 
-  const seekerCompletesCurseAction = useCallback((photoFile?: File) => {
-    setGameState(prev => {
-      if (!prev.currentRound || !prev.currentRound.activeCurse) return prev;
-      const actualCurseDetails = CURSE_DICE_OPTIONS.find(c => c.number === prev.currentRound!.activeCurse!.curseId);
+  const seekerCompletesCurseAction = useCallback(async (photoFile?: File) => {
+    const currentActiveCurse = gameStateRef.current.currentRound?.activeCurse;
+    if (!currentActiveCurse) return;
 
-      if (!actualCurseDetails) return prev;
+    const actualCurseDetails = CURSE_DICE_OPTIONS.find(c => c.number === currentActiveCurse.curseId);
+    if (!actualCurseDetails) return;
 
-      if (actualCurseDetails.requiresSeekerAction === 'photo' && photoFile) {
-        // Note: photoFile is a local File object. We're not storing it in Supabase here.
-        // For a real implementation, you'd upload this photoFile to Supabase Storage first,
-        // get its URL, and then store the URL in activeCurse.seekerSubmittedPhotoUrl (new field).
-        // For now, we just mark it for hider acknowledgement.
-        // toast({ title: "Photo Submitted for Curse", description: "Awaiting hider acknowledgement." });
-        return {
-          ...prev,
-          currentRound: {
-            ...prev.currentRound,
-            activeCurse: {
-              ...prev.currentRound.activeCurse,
-              seekerSubmittedPhoto: photoFile, // Storing the File object locally for display
-              resolutionStatus: 'pending_hider_acknowledgement',
+    if (actualCurseDetails.requiresSeekerAction === 'photo' && photoFile) {
+      toast({ title: "Uploading Curse Photo...", description: "Please wait." });
+      const uploadedUrl = await uploadPhotoToSupabaseStorage(photoFile, 'public/curse_photos');
+      if (uploadedUrl) {
+        toast({ title: "Curse Photo Uploaded!", description: "Awaiting hider acknowledgement." });
+        setGameState(prev => {
+          if (!prev.currentRound?.activeCurse) return prev;
+          return {
+            ...prev,
+            currentRound: {
+              ...prev.currentRound,
+              activeCurse: {
+                ...prev.currentRound.activeCurse,
+                seekerSubmittedPhoto: photoFile, // Keep local File for immediate preview
+                seekerSubmittedPhotoUrl: uploadedUrl, // Store URL for persistence
+                resolutionStatus: 'pending_hider_acknowledgement',
+              },
             },
-          },
-        };
-      } else if (actualCurseDetails.requiresSeekerAction === 'confirmation') {
-        // toast({ title: "Curse Action Confirmed", description: "The curse has been resolved." });
-        return { ...prev, currentRound: { ...prev.currentRound, activeCurse: null } }; // Clears the curse
+          };
+        });
+      } else {
+        toast({ title: "Curse Photo Upload Failed", description: "Could not upload photo for curse. Please try again.", variant: "destructive" });
       }
-      return prev; 
-    });
-  }, [setGameState]);
+    } else if (actualCurseDetails.requiresSeekerAction === 'confirmation') {
+      clearActiveCurse();
+    }
+  }, [setGameState, clearActiveCurse, toast]);
 
   const hiderAcknowledgesSeekerPhoto = useCallback(() => {
-    setGameState(prev => {
-      if (!prev.currentRound || !prev.currentRound.activeCurse || !prev.currentRound.activeCurse.seekerSubmittedPhoto) {
-        return prev;
-      }
-      // toast({ title: "Photo Acknowledged", description: "The curse has been resolved." });
-      return { ...prev, currentRound: { ...prev.currentRound, activeCurse: null } }; // Clears the curse
-    });
-  }, [setGameState]);
-  
+    // toast({ title: "Photo Acknowledged", description: "The curse has been resolved." });
+    clearActiveCurse();
+  }, [clearActiveCurse]);
+
   const setAdminPinCtx = useCallback((pin: string) => {
     const newPin = pin.trim() === "" ? undefined : pin.trim();
     setGameState(prev => ({ ...prev, adminPin: newPin }));
-    setIsAdminAuthenticated(false); 
+    setIsAdminAuthenticated(false);
     if (typeof window !== 'undefined') localStorage.removeItem(LOCAL_STORAGE_AUTH_PREFIX + 'admin');
     toast({ title: "Admin PIN Updated", description: `Admin access PIN has been ${newPin === undefined ? "cleared" : "set"}. You may need to re-login.` });
   }, [setGameState, toast]);
@@ -706,15 +694,15 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     toast({ title: "Seeker PIN Updated", description: `Seeker panel PIN has been ${newPin === undefined ? "cleared" : "set"}. Access may be revoked until re-login.` });
   }, [setGameState, toast]);
 
- const authenticateAdmin = useCallback((enteredPin: string): boolean => {
+  const authenticateAdmin = useCallback((enteredPin: string): boolean => {
     const effectiveAdminPin = gameStateRef.current.adminPin || defaultGameState.adminPin;
     if (effectiveAdminPin && effectiveAdminPin === enteredPin) {
-        setIsAdminAuthenticated(true);
-        if (typeof window !== 'undefined') localStorage.setItem(LOCAL_STORAGE_AUTH_PREFIX + 'admin', 'true');
-        return true;
+      setIsAdminAuthenticated(true);
+      if (typeof window !== 'undefined') localStorage.setItem(LOCAL_STORAGE_AUTH_PREFIX + 'admin', 'true');
+      return true;
     }
     return false;
-  }, []); 
+  }, []);
 
   const authenticateHider = useCallback((enteredPin: string): boolean => {
     if (gameStateRef.current.hiderPin && gameStateRef.current.hiderPin === enteredPin) {
@@ -723,7 +711,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       return true;
     }
     return false;
-  }, []); 
+  }, []);
 
   const authenticateSeeker = useCallback((enteredPin: string): boolean => {
     if (gameStateRef.current.seekerPin && gameStateRef.current.seekerPin === enteredPin) {
@@ -753,13 +741,13 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   }, [toast]);
 
 
-  if (isLoadingState && typeof window !== 'undefined') { 
+  if (isLoadingState && typeof window !== 'undefined') {
     return <div className="flex justify-center items-center min-h-screen text-lg bg-background text-foreground p-4">Loading game state from server... Please wait.</div>;
   }
 
   return (
     <GameContext.Provider value={{
-      ...gameStateRef.current, 
+      ...gameStateRef.current,
       addPlayer,
       createTeam,
       assignPlayerToTeam,
@@ -796,4 +784,3 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     </GameContext.Provider>
   );
 };
-

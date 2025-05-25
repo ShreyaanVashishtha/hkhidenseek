@@ -21,8 +21,8 @@ export interface QuestionOption {
   id: string;
   name: string;
   category: QuestionCategory;
-  cost: number; 
-  hiderCoinsEarned: number; 
+  cost: number;
+  hiderCoinsEarned: number;
   description: string;
   seekerPrompt?: string;
   disabledCondition?: (gameState: GameState, team: Team) => boolean;
@@ -64,7 +64,8 @@ export interface ActiveCurseInfo {
   curseId: number;
   startTime: Date;
   hiderInputText?: string;
-  seekerSubmittedPhoto?: File; 
+  seekerSubmittedPhoto?: File; // For local preview on seeker side
+  seekerSubmittedPhotoUrl?: string; // For persisted storage and hider view
   resolutionStatus?: 'pending_seeker_action' | 'pending_hider_acknowledgement' | 'resolved';
 }
 
@@ -86,10 +87,10 @@ export interface GameState {
   currentRound: GameRound | null;
   gameHistory: GameRound[];
   mtrMapUrl?: string;
-  adminPin?: string; 
+  adminPin?: string;
   hiderPin?: string;
   seekerPin?: string;
-  // Authentication statuses are handled locally in GameContext, not part of synced GameState
 }
 
 export type TeamRole = "hider" | "seeker" | "admin" | "spectator";
+
