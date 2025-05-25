@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { useGameContext } from "@/hooks/useGameContext";
-import type { AskedQuestion, Team, CurseRule } from "@/lib/types";
+import type { AskedQuestion, Team, CurseRule, ActiveCurseInfo } from "@/lib/types";
 import { CURSE_DICE_COST, CURSE_DICE_OPTIONS, MAX_CURSES_PER_ROUND, HIDING_PHASE_DURATION_MINUTES, SEEKING_PHASE_DURATION_MINUTES } from "@/lib/constants";
 import { PageHeader } from "@/components/PageHeader";
 import { TimerDisplay } from "@/components/game/TimerDisplay";
@@ -73,31 +73,47 @@ function HiderPageContent() {
 
 
   useEffect(() => {
-    const currentHidingTeamId = currentRound?.hidingTeam?.id;
-    if (currentHidingTeamId) {
-      const updatedHidingTeamFromContext = teams.find(t => t.id === currentHidingTeamId);
-      setMyTeam(updatedHidingTeamFromContext);
+    const currentHidingTeamIdInRound = currentRound?.hidingTeam?.id;
 
-      // Sync local rolledCurse display with global activeCurse
-      if (currentRound.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved') {
-        const activeCurseDetails = CURSE_DICE_OPTIONS.find(c => c.number === currentRound.activeCurse!.curseId);
-        if (activeCurseDetails && !rolledCurse && !hasPendingRoll) { // Only set if not already locally processing a roll
-            setRolledCurse(activeCurseDetails);
-            setHiderCurseInputText(currentRound.activeCurse.hiderInputText || "");
+    // Update myTeam state
+    if (currentHidingTeamIdInRound) {
+      const teamFromContext = teams.find(t => t.id === currentHidingTeamIdInRound);
+      if (teamFromContext?.id !== myTeam?.id) {
+        setMyTeam(teamFromContext);
+      }
+    } else {
+      const generalHidingTeam = teams.find(t => t.isHiding);
+      if (generalHidingTeam?.id !== myTeam?.id) {
+        setMyTeam(generalHidingTeam);
+      } else if (!generalHidingTeam && myTeam) {
+        setMyTeam(undefined);
+      }
+    }
+    
+    const globallyActiveCurseInfo = currentRound?.activeCurse;
+
+    if (globallyActiveCurseInfo && globallyActiveCurseInfo.resolutionStatus !== 'resolved') {
+      // There is a globally active curse. Display it.
+      const globalCurseDetails = CURSE_DICE_OPTIONS.find(c => c.number === globallyActiveCurseInfo.curseId);
+      if (globalCurseDetails) {
+        // If local rolledCurse isn't already showing this global curse, or if it's a different one, update it.
+        if (!rolledCurse || rolledCurse.number !== globalCurseDetails.number) {
+          setRolledCurse(globalCurseDetails);
         }
-      } else if (!currentRound.activeCurse && !hasPendingRoll) { // Global curse cleared, and no local roll pending
-        setRolledCurse(null);
+        setHiderCurseInputText(globallyActiveCurseInfo.hiderInputText || "");
+      }
+    } else {
+      // No globally active curse.
+      // If `hasPendingRoll` is true, user is in "buy" phase. `rolledCurse` should be null (set by handleBuyCurseDice).
+      // If `hasPendingRoll` is false AND `rolledCurse` is non-null, it means a local roll is pending activation. We should *keep* it displayed.
+      // If `hasPendingRoll` is false AND `rolledCurse` IS null (e.g., after activation, or initial state), clear related input text.
+      if (!hasPendingRoll && !rolledCurse) {
         setHiderCurseInputText("");
       }
-
-    } else {
-       setMyTeam(teams.find(t => t.isHiding)); 
-       if (!currentRound?.activeCurse && !hasPendingRoll) { // No global or local pending roll
-         setRolledCurse(null);
-         setHiderCurseInputText("");
-       }
+      // If `rolledCurse` *is* set (a local roll is pending) and there's no global curse, DO NOT clear `rolledCurse` here.
+      // It will be cleared by `handleActivateRolledCurse` or `handleBuyCurseDice`.
     }
-  }, [teams, currentRound, hasPendingRoll, rolledCurse]);
+  }, [teams, currentRound, myTeam, hasPendingRoll, rolledCurse]);
 
 
   const handleSendResponse = () => {
@@ -143,10 +159,12 @@ function HiderPageContent() {
       toast({ title: "Max Curses Used", description: `You have already used curse dice ${MAX_CURSES_PER_ROUND} times this round.`, variant: "destructive" });
       return;
     }
-    if (hasPendingRoll || (currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved') || rolledCurse) { 
-      toast({ title: "Roll Pending or Curse Active", description: "A dice roll is pending, a curse is already active, or you have a rolled curse awaiting action.", variant: "destructive" });
+    // Check if a curse is already globally active OR if a local roll is pending activation
+    if ((currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved') || rolledCurse) { 
+      toast({ title: "Roll Pending or Curse Active", description: "A dice roll is pending activation, or a curse is already globally active.", variant: "destructive" });
       return;
     }
+
     updateTeamCoins(myTeam.id, CURSE_DICE_COST, 'subtract');
     setHasPendingRoll(true);
     setRolledCurse(null); 
@@ -182,7 +200,7 @@ function HiderPageContent() {
         toast({ title: "Activation Error", description: "No curse rolled or a curse is already active.", variant: "destructive" });
         return;
     }
-    if ((myTeam.cursesUsed || 0) >= MAX_CURSES_PER_ROUND) {
+    if ((myTeam.cursesUsed || 0) >= MAX_CURSES_PER_ROUND) { // This check uses current cursesUsed, before incrementing for this one
       toast({ title: "Max Curses Used", description: `Cannot activate, max curses for this round reached.`, variant: "destructive" });
       return;
     }
@@ -253,8 +271,6 @@ function HiderPageContent() {
     ? currentRound.activeCurse 
     : null;
   
-  // This is for displaying the currently active global curse.
-  // `rolledCurse` is for the hider's *new* roll before they activate it.
   const displayedActiveCurseDetails = globallyActiveCurseInfo
     ? CURSE_DICE_OPTIONS.find(c => c.number === globallyActiveCurseInfo.curseId) 
     : null;
@@ -497,3 +513,5 @@ export default function HiderPage() {
     </PinProtectPage>
   );
 }
+
+    
