@@ -16,13 +16,13 @@ import { PageHeader } from "@/components/PageHeader";
 import { TimerDisplay } from "@/components/game/TimerDisplay";
 import { MTRMapDisplay } from "@/components/game/MTRMapDisplay";
 import { useToast } from '@/hooks/use-toast';
-import { Eye, ShieldQuestion, Upload, Send, Dice5, Zap, Coins, HelpCircle, CheckCircle, Image as ImageIcon } from "lucide-react";
+import { Eye, ShieldQuestion, Upload, Send, Dice5, Zap, Coins, HelpCircle, CheckCircle, Image as ImageIcon, Loader2 } from "lucide-react";
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { PinProtectPage } from '@/components/auth/PinProtectPage';
 
 interface SeekerPhotoDisplayProps {
-  photoUrl: string; // Now expects a URL
+  photoUrl: string;
 }
 
 const SeekerPhotoDisplay: React.FC<SeekerPhotoDisplayProps> = ({ photoUrl }) => {
@@ -46,7 +46,8 @@ function HiderPageContent() {
     answerQuestion,
     activateCurse,
     recordCurseUsed,
-    hiderAcknowledgesSeekerPhoto
+    hiderAcknowledgesSeekerPhoto,
+    isLoadingState, // Get loading state
   } = useGameContext();
   const { toast } = useToast();
 
@@ -55,6 +56,7 @@ function HiderPageContent() {
   const [selectedQuestionToAnswer, setSelectedQuestionToAnswer] = useState<AskedQuestion | null>(null);
   const [responseText, setResponseText] = useState("");
   const [responsePhoto, setResponsePhoto] = useState<File | null>(null);
+  const [responsePhotoPreview, setResponsePhotoPreview] = useState<string | null>(null);
   const [yesNoResponse, setYesNoResponse] = useState<"yes" | "no" | undefined>(undefined);
 
   const [rolledCurse, setRolledCurse] = useState<CurseRule | null>(null);
@@ -69,36 +71,50 @@ function HiderPageContent() {
     if (currentHidingTeamIdInRound) {
       determinedTeam = teams.find(t => t.id === currentHidingTeamIdInRound);
     } else {
-      // Fallback for scenarios where currentRound.hidingTeam might not be fully populated yet
-      // but the team is marked as isHiding in the main teams array.
       determinedTeam = teams.find(t => t.isHiding);
     }
      setMyTeam(determinedTeam);
-
 
     const globallyActiveCurseInfo = currentRound?.activeCurse;
 
     if (globallyActiveCurseInfo && globallyActiveCurseInfo.resolutionStatus !== 'resolved') {
       const globalCurseDetails = CURSE_DICE_OPTIONS.find(c => c.number === globallyActiveCurseInfo.curseId);
       if (globalCurseDetails) {
-        // If a global curse is active and we're not already displaying it, or if its input text changed, update local display.
         if (!rolledCurse || rolledCurse.number !== globalCurseDetails.number || (globallyActiveCurseInfo.hiderInputText && hiderCurseInputText !== globallyActiveCurseInfo.hiderInputText)) {
             setRolledCurse(globalCurseDetails);
         }
-        setHasPendingRoll(false); // A global curse is active, so no local roll is pending actual dice action.
+        setHasPendingRoll(false); 
         setHiderCurseInputText(globallyActiveCurseInfo.hiderInputText || "");
       }
     } else if (!globallyActiveCurseInfo && !hasPendingRoll && rolledCurse) {
-      // No global curse, no pending roll, but a local curse is displayed. This means it was just activated and cleared locally,
-      // or cleared by admin/seeker. Clear local display.
       setRolledCurse(null);
       setHiderCurseInputText("");
     } else if (!globallyActiveCurseInfo && !hasPendingRoll && !rolledCurse) {
-      // No global, no pending, no local rolled -> ensure input text is also clear.
       setHiderCurseInputText("");
     }
 
   }, [teams, currentRound]);
+
+  const handlePhotoInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files ? e.target.files[0] : null;
+    setResponsePhoto(file);
+    if (responsePhotoPreview) {
+      URL.revokeObjectURL(responsePhotoPreview);
+      setResponsePhotoPreview(null);
+    }
+    if (file) {
+      setResponsePhotoPreview(URL.createObjectURL(file));
+    }
+  };
+
+  useEffect(() => {
+    // Cleanup object URL
+    return () => {
+      if (responsePhotoPreview) {
+        URL.revokeObjectURL(responsePhotoPreview);
+      }
+    };
+  }, [responsePhotoPreview]);
 
 
   const handleSendResponse = async () => {
@@ -117,7 +133,7 @@ function HiderPageContent() {
         return;
       }
       finalResponse = responsePhoto;
-    } else {
+    } else { // Relative
       if (!responseText.trim()) {
         toast({ title: "Error", description: "Please enter your response.", variant: "destructive" });
         return;
@@ -126,11 +142,11 @@ function HiderPageContent() {
     }
 
     await answerQuestion(selectedQuestionToAnswer.id, finalResponse);
-    // Toast for photo upload success/failure is handled within answerQuestion -> uploadPhotoToSupabaseStorage
-
+    
     setSelectedQuestionToAnswer(null);
     setResponseText("");
     setResponsePhoto(null);
+    setResponsePhotoPreview(null);
     setYesNoResponse(undefined);
   };
 
@@ -176,7 +192,7 @@ function HiderPageContent() {
     const curseDetails = CURSE_DICE_OPTIONS.find(c => c.number === roll);
     if (curseDetails) {
       setRolledCurse(curseDetails);
-      setHasPendingRoll(false); // Roll is done, awaiting activation.
+      setHasPendingRoll(false); 
       setHiderCurseInputText("");
       toast({ title: "Dice Rolled!", description: `You got: ${curseDetails.name}. Confirm to activate.` });
     }
@@ -219,6 +235,37 @@ function HiderPageContent() {
 
   const questionsToAnswer = currentRound?.askedQuestions?.filter(q => !q.response) || [];
 
+
+  if (isLoadingState) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full">
+        <PageHeader title="Hider View" icon={Eye}/>
+        <Card className="w-full max-w-md text-center">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><Loader2 className="animate-spin" /> Loading Game Data...</CardTitle>
+          </CardHeader>
+          <CardContent><p className="text-muted-foreground">Please wait while we fetch the latest game information.</p></CardContent>
+        </Card>
+      </div>
+    );
+  }
+  
+  if (!currentRound || (currentRound.status !== 'hiding-phase' && currentRound.status !== 'seeking-phase')) {
+     return (
+      <div className="flex flex-col items-center justify-center h-full">
+        <PageHeader title="Hider View" icon={Eye}/>
+        <Card className="w-full max-w-md text-center">
+          <CardHeader>
+            <CardTitle>No Active Round</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-muted-foreground">The game round has not started or has ended. Please wait for the admin.</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+  
   if (!myTeam && (isHidingPhase || isSeekingPhase)) {
     return (
       <div className="flex flex-col items-center justify-center h-full">
@@ -235,21 +282,6 @@ function HiderPageContent() {
     );
   }
 
-  if (!currentRound || (currentRound.status !== 'hiding-phase' && currentRound.status !== 'seeking-phase')) {
-     return (
-      <div className="flex flex-col items-center justify-center h-full">
-        <PageHeader title="Hider View" icon={Eye}/>
-        <Card className="w-full max-w-md text-center">
-          <CardHeader>
-            <CardTitle>No Active Round</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground">The game round has not started or has ended. Please wait for the admin.</p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 
   const currentPhaseDuration = isHidingPhase ? HIDING_PHASE_DURATION_MINUTES : SEEKING_PHASE_DURATION_MINUTES;
   const timerTitle = isHidingPhase ? "Hiding Phase Ends In" : "Seeking Phase Active";
@@ -327,7 +359,7 @@ function HiderPageContent() {
                   {questionsToAnswer.map(q => (
                     <li key={q.id} className={`p-3 border rounded-md cursor-pointer hover:bg-accent/10 ${selectedQuestionToAnswer?.id === q.id ? 'ring-2 ring-primary bg-primary/5' : 'bg-card/80'}`} onClick={() => setSelectedQuestionToAnswer(q)}>
                       <p className="font-semibold text-primary">{q.category}: <span className="text-foreground">{q.text}</span></p>
-                      <p className="text-xs text-muted-foreground">From: Team {currentRound?.seekingTeams.find(st => st.id === q.askingTeamId)?.name || 'Seeker'} | Received: {new Date(q.timestamp).toLocaleTimeString()}</p>
+                      <p className="text-xs text-muted-foreground">From: Team {teams.find(t => t.id === q.askingTeamId)?.name || 'Seeker'} | Received: {new Date(q.timestamp).toLocaleTimeString()}</p>
                     </li>
                   ))}
                 </ul>
@@ -365,10 +397,16 @@ function HiderPageContent() {
                       id="photo-upload"
                       type="file"
                       accept="image/*"
-                      onChange={(e) => setResponsePhoto(e.target.files ? e.target.files[0] : null)}
+                      onChange={handlePhotoInputChange}
                       className="file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/20 file:text-primary hover:file:bg-primary/30"
                     />
-                    {responsePhoto && <p className="text-xs text-muted-foreground">Selected: {responsePhoto.name}</p>}
+                    {responsePhotoPreview && (
+                        <div className="mt-2">
+                            <p className="text-xs text-muted-foreground mb-1">Preview:</p>
+                            <Image src={responsePhotoPreview} alt="Response photo preview" width={200} height={150} className="rounded-md border object-contain" data-ai-hint="preview image" />
+                        </div>
+                    )}
+                    {responsePhoto && !responsePhotoPreview && <p className="text-xs text-muted-foreground">Selected: {responsePhoto.name}</p>}
                   </div>
                 )}
                 {selectedQuestionToAnswer.category === "Relative" && (
@@ -501,3 +539,4 @@ export default function HiderPage() {
     </PinProtectPage>
   );
 }
+
