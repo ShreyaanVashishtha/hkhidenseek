@@ -86,12 +86,10 @@ export interface GameState {
   currentRound: GameRound | null;
   gameHistory: GameRound[];
   mtrMapUrl?: string;
-  adminPin?: string;
+  adminPin?: string; // PINs are global settings
   hiderPin?: string;
   seekerPin?: string;
-  isAdminAuthenticated?: boolean;
-  isHiderAuthenticated?: boolean;
-  isSeekerAuthenticated?: boolean;
+  // Authentication statuses are NOT part of the shared state
 }
 
 export type TeamRole = "hider" | "seeker" | "admin" | "spectator";

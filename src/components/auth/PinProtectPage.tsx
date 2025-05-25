@@ -6,7 +6,7 @@ import { useGameContext } from '@/hooks/useGameContext';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { KeyRound, ShieldAlert } from 'lucide-react'; // Or other icon
+import { KeyRound, ShieldAlert } from 'lucide-react'; 
 
 interface PinProtectPageProps {
   role: 'admin' | 'hider' | 'seeker';
@@ -15,54 +15,57 @@ interface PinProtectPageProps {
 
 export function PinProtectPage({ role, children }: PinProtectPageProps) {
   const {
-    adminPin, hiderPin, seekerPin,
-    isAdminAuthenticated, isHiderAuthenticated, isSeekerAuthenticated,
-    authenticateAdmin, authenticateHider, authenticateSeeker,
+    // Global PIN settings from Supabase
+    adminPin: globalAdminPin, 
+    hiderPin: globalHiderPin, 
+    seekerPin: globalSeekerPin,
+    // Local auth status from GameContext (backed by localStorage)
+    isAdminAuthenticated, 
+    isHiderAuthenticated, 
+    isSeekerAuthenticated,
+    // Auth functions
+    authenticateAdmin, 
+    authenticateHider, 
+    authenticateSeeker,
   } = useGameContext();
 
   const [inputPin, setInputPin] = useState('');
   const [error, setError] = useState('');
-  const [pageReady, setPageReady] = useState(false); // To prevent flash of PIN screen if already authed
+  const [pageReady, setPageReady] = useState(false); 
 
-  // Determine current authentication state and PIN for the role
   let isAuthenticatedForRole = false;
   let pinForRole: string | undefined;
   let authenticateFunction: (pin: string) => boolean;
 
   switch (role) {
     case 'admin':
-      isAuthenticatedForRole = isAdminAuthenticated ?? false;
-      pinForRole = adminPin;
+      isAuthenticatedForRole = isAdminAuthenticated;
+      pinForRole = globalAdminPin; 
       authenticateFunction = authenticateAdmin;
       break;
     case 'hider':
-      isAuthenticatedForRole = isHiderAuthenticated ?? false;
-      pinForRole = hiderPin;
+      isAuthenticatedForRole = isHiderAuthenticated;
+      pinForRole = globalHiderPin;
       authenticateFunction = authenticateHider;
       break;
     case 'seeker':
-      isAuthenticatedForRole = isSeekerAuthenticated ?? false;
-      pinForRole = seekerPin;
+      isAuthenticatedForRole = isSeekerAuthenticated;
+      pinForRole = globalSeekerPin;
       authenticateFunction = authenticateSeeker;
       break;
     default:
-      // Should not happen
       return <p>Error: Invalid role for PIN protection.</p>;
   }
   
-  // This effect ensures we don't show PIN screen prematurely if context is still loading localStorage
   useEffect(() => {
-    // Check if the context has loaded the pins (they won't be undefined if loaded and empty, but truly undefined if not yet loaded from async storage effect in context)
-    // A simple check: if adminPin is still in its default state (undefined) and we are checking admin role, it might not be ready.
-    // For simplicity, we assume context loads fast. A more robust solution might involve a loading state in context.
-    // However, our GameContext initializes pins to undefined and auth to false, then useEffect loads them.
-    // So, by the time this component renders, pins *should* be populated from localStorage or remain undefined if not set.
+    // This effect helps prevent a flash of the PIN screen if auth status is already true
+    // from localStorage, or if no PIN is set for the role.
+    // It assumes GameContext has initialized its local auth states from localStorage.
     setPageReady(true);
-  }, [adminPin, hiderPin, seekerPin]); // Re-check when pins are potentially updated
+  }, [isAdminAuthenticated, isHiderAuthenticated, isSeekerAuthenticated, globalAdminPin, globalHiderPin, globalSeekerPin]);
 
 
   if (!pageReady) {
-    // Optional: show a loading spinner or minimal UI
     return (
         <div className="flex items-center justify-center min-h-screen p-4">
             <Card className="w-full max-w-md">
@@ -80,8 +83,6 @@ export function PinProtectPage({ role, children }: PinProtectPageProps) {
     );
   }
   
-  // If no PIN is set for this specific role, grant access directly.
-  // Or if user is already authenticated for this role.
   if (!pinForRole || isAuthenticatedForRole) {
     return <>{children}</>;
   }
@@ -90,11 +91,11 @@ export function PinProtectPage({ role, children }: PinProtectPageProps) {
     e.preventDefault();
     setError('');
     if (authenticateFunction(inputPin)) {
-      // Auth status is set in context, PinProtectPage will re-render and grant access.
+      // Auth status is set in context (and localStorage), PinProtectPage will re-render.
     } else {
       setError('Incorrect PIN. Please try again.');
     }
-    setInputPin(''); // Clear input regardless of success
+    setInputPin(''); 
   };
 
   return (
