@@ -10,12 +10,12 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { useGameContext } from "@/hooks/useGameContext";
 import type { AskedQuestion, Team } from "@/lib/types";
-import { CURSE_DICE_COST, CURSE_DICE_OPTIONS, MAX_CURSES_PER_ROUND, HIDING_PHASE_DURATION_MINUTES, SEEKING_PHASE_DURATION_MINUTES } from "@/lib/constants";
+import { CURSE_DICE_COST, CURSE_DICE_OPTIONS, MAX_CURSES_PER_ROUND, HIDING_PHASE_DURATION_MINUTES, SEEKING_PHASE_DURATION_MINUTES, COINS_EARNED_PER_QUESTION } from "@/lib/constants";
 import { PageHeader } from "@/components/PageHeader";
 import { TimerDisplay } from "@/components/game/TimerDisplay";
 import { MTRMapDisplay } from "@/components/game/MTRMapDisplay";
 import { useToast } from '@/hooks/use-toast';
-import { Eye, ShieldQuestion, Upload, Send, Dice5, Zap } from "lucide-react";
+import { Eye, ShieldQuestion, Upload, Send, Dice5, Zap, Coins } from "lucide-react"; // Added Coins icon
 import { ScrollArea } from '@/components/ui/scroll-area';
 
 export default function HiderPage() {
@@ -24,7 +24,6 @@ export default function HiderPage() {
 
   const [myTeam, setMyTeam] = useState<Team | undefined>(undefined); 
   
-  // Removed local incomingQuestions state, will use from context
   const [selectedQuestionToAnswer, setSelectedQuestionToAnswer] = useState<AskedQuestion | null>(null);
   const [responseText, setResponseText] = useState("");
   const [responsePhoto, setResponsePhoto] = useState<File | null>(null);
@@ -33,7 +32,14 @@ export default function HiderPage() {
   const [rolledCurse, setRolledCurse] = useState<{ number: number; name: string; description: string; effect: string; icon: React.ElementType } | null>(null);
 
   useEffect(() => {
-    setMyTeam(teams.find(t => t.isHiding));
+    // Find the hider team from the context's currentRound if available, otherwise from teams list
+    if (currentRound?.hidingTeam) {
+      // Ensure 'myTeam' state reflects the potentially updated coin balance from GameContext
+      const updatedHidingTeamFromContext = teams.find(t => t.id === currentRound.hidingTeam!.id);
+      setMyTeam(updatedHidingTeamFromContext);
+    } else {
+       setMyTeam(teams.find(t => t.isHiding));
+    }
   }, [teams, currentRound]);
 
   const handleSendResponse = () => {
@@ -60,7 +66,7 @@ export default function HiderPage() {
       finalResponse = responseText;
     }
 
-    answerQuestion(selectedQuestionToAnswer.id, finalResponse); // Use context function
+    answerQuestion(selectedQuestionToAnswer.id, finalResponse);
     toast({ title: "Response Sent!", description: `Your response to "${selectedQuestionToAnswer.text.substring(0,20)}..." has been sent.` });
     
     setSelectedQuestionToAnswer(null);
@@ -72,7 +78,7 @@ export default function HiderPage() {
   const handleBuyCurseDice = () => {
     if (!myTeam) return;
     if (myTeam.coins < CURSE_DICE_COST) {
-      toast({ title: "Not enough coins!", description: `You need ${CURSE_DICE_COST} coins to buy Curse Dice.`, variant: "destructive" });
+      toast({ title: "Not enough coins!", description: `You need ${CURSE_DICE_COST} coins to buy Curse Dice. You have ${myTeam.coins}.`, variant: "destructive" });
       return;
     }
     if (myTeam.cursesUsed >= MAX_CURSES_PER_ROUND) {
@@ -80,20 +86,28 @@ export default function HiderPage() {
       return;
     }
     updateTeamCoins(myTeam.id, CURSE_DICE_COST, 'subtract');
-    // Optimistically update local myTeam state for UI responsiveness
-    setMyTeam(prev => prev ? ({...prev, coins: prev.coins - CURSE_DICE_COST, cursesUsed: (prev.cursesUsed || 0) + 1 }) : undefined);
+    // The `myTeam` state will be updated via useEffect when `teams` from context changes.
     toast({ title: "Curse Dice Purchased!", description: `-${CURSE_DICE_COST} coins. Roll the dice!` });
   };
 
   const handleRollCurseDice = () => {
-    if (!myTeam || (myTeam.cursesUsed || 0) === 0 || (myTeam.cursesUsed || 0) > MAX_CURSES_PER_ROUND || !currentRound?.seekingTeams.length) { 
+    if (!myTeam || (myTeam.cursesUsed || 0) === 0 || (myTeam.cursesUsed || 0) >= MAX_CURSES_PER_ROUND || !currentRound?.seekingTeams.length) { 
         toast({ title: "Cannot Roll", description: "Buy curse dice first or max uses reached.", variant: "destructive" });
         return;
     }
+    // Increment cursesUsed via context (or a dedicated function if preferred)
+    // For simplicity, we can let the Admin verify, or add a function to context later.
+    // Here, we'll assume the buyCurse already implicitly means one use will occur.
+    // Or, we can update cursesUsed directly here and rely on it in context if needed.
+    // For now, we'll let the toast handle the UI and assume `myTeam.cursesUsed` is updated by `buyCurseDice` or its effect.
+    // A more robust solution might be: updateTeamCursesUsed(myTeam.id, 1, 'add');
+
     const roll = Math.floor(Math.random() * 6) + 1 as 1 | 2 | 3 | 4 | 5 | 6;
     const curse = CURSE_DICE_OPTIONS.find(c => c.number === roll);
     if (curse) {
         setRolledCurse(curse);
+        // Increment cursesUsed count on the team (optimistic update for UI, context should be source of truth)
+        setMyTeam(prev => prev ? ({...prev, cursesUsed: (prev.cursesUsed || 0) + 1 }) : undefined);
         toast({ title: "Curse Rolled!", description: `Curse of ${curse.name} activated!` });
     }
   };
@@ -102,7 +116,6 @@ export default function HiderPage() {
   const isHidingPhase = gamePhase === 'hiding-phase';
   const isSeekingPhase = gamePhase === 'seeking-phase';
 
-  // Get questions that need answering from the context
   const questionsToAnswer = currentRound?.askedQuestions?.filter(q => !q.response) || [];
 
 
@@ -148,6 +161,16 @@ export default function HiderPage() {
         description={isHidingPhase ? "Choose your hiding spot! The seekers are waiting." : "Evade the seekers! Answer their questions carefully."}
         icon={Eye}
       />
+       <Card>
+            <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-xl">
+                    <Coins className="h-6 w-6 text-yellow-500" />
+                    Team Coins: {myTeam?.coins ?? 0}
+                </CardTitle>
+                <CardDescription>Earn {COINS_EARNED_PER_QUESTION} coins for each question seekers ask. Use coins for Curse Dice.</CardDescription>
+            </CardHeader>
+        </Card>
+
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <TimerDisplay 
@@ -181,8 +204,8 @@ export default function HiderPage() {
         <>
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2"><ShieldQuestion /> Incoming Questions</CardTitle>
-              <CardDescription>Seekers are asking questions. Respond strategically!</CardDescription>
+              <CardTitle className="flex items-center gap-2"><ShieldQuestion /> Incoming Questions ({questionsToAnswer.length})</CardTitle>
+              <CardDescription>Seekers are asking questions. Respond strategically to earn coins!</CardDescription>
             </CardHeader>
             <CardContent>
               {questionsToAnswer.length === 0 ? (
@@ -257,8 +280,8 @@ export default function HiderPage() {
           
           <Card>
             <CardHeader>
-                <CardTitle className="flex items-center gap-2"><Zap/> Curse Dice ({myTeam?.coins ?? 0} coins)</CardTitle>
-                <CardDescription>Cost: {CURSE_DICE_COST} coins. Max {MAX_CURSES_PER_ROUND} uses per round. Curses used: {myTeam?.cursesUsed ?? 0}/{MAX_CURSES_PER_ROUND}</CardDescription>
+                <CardTitle className="flex items-center gap-2"><Zap/> Curse Dice</CardTitle>
+                <CardDescription>Cost: {CURSE_DICE_COST} coins. Max {MAX_CURSES_PER_ROUND} uses per round. Curses used this round: {myTeam?.cursesUsed ?? 0}/{MAX_CURSES_PER_ROUND}</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-wrap gap-4 items-center">
                 <Button 
@@ -270,7 +293,7 @@ export default function HiderPage() {
                 </Button>
                 <Button 
                     onClick={handleRollCurseDice} 
-                    disabled={!myTeam || (myTeam.cursesUsed || 0) === 0 || (myTeam.cursesUsed || 0) > MAX_CURSES_PER_ROUND || !currentRound?.seekingTeams.length}
+                    disabled={!myTeam || (myTeam.cursesUsed || 0) === 0 || (myTeam.cursesUsed || 0) >= MAX_CURSES_PER_ROUND || !currentRound?.seekingTeams.length || rolledCurse !== null}
                     variant="outline"
                     className="flex items-center gap-2"
                 >

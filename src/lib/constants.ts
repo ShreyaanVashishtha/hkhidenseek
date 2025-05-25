@@ -27,7 +27,7 @@ export const GAME_RULES = {
     title: "Game Phases",
     phases: [
       { name: "1. Hiding Phase (1 hour)", description: "Hiders choose and travel to a hiding zone. Seekers must remain at their starting location and cannot move during this time. Once the hour ends, the hiding timer starts." },
-      { name: "2. Seeking Phase (up to 2 hours or until capture)", description: "Seekers begin moving via the MTR. Seekers complete challenges to progress. Questions can be asked to narrow down the hider's location." }
+      { name: "2. Seeking Phase (up to 2 hours or until capture)", description: "Seekers begin moving via the MTR. Seekers complete challenges. Questions can be asked to narrow down the hider's location." }
     ]
   },
   hidingRules: {
@@ -36,7 +36,7 @@ export const GAME_RULES = {
       "Hiders must stay inside their selected 500m zone.",
       "Once Seekers enter that zone, Hiders are no longer allowed to use Photo questions to protect their location.",
       "Hiders must stay together.",
-      "Hiders may purchase curse dice to interfere with Seekers (cost: 50 coins)."
+      "Hiders may purchase curse dice to interfere with Seekers (cost: 50 coins). Hiders earn coins when Seekers ask questions."
     ]
   },
   challenges: {
@@ -48,8 +48,11 @@ export const GAME_RULES = {
     ]
   },
   coins: {
-    title: "Coins (Hiders)",
-    rules: ["Hiders use coins (earned in previous rounds as seekers or given by admin) to purchase Curse Dice."]
+    title: "Coins", // Updated title
+    rules: [
+      "Hiders use coins earned from Seekers' questions to purchase Curse Dice.",
+      "Seekers have unlimited coins for asking questions (questions are free)."
+    ]
   },
   questionRules: {
     title: "Question Rules",
@@ -95,11 +98,12 @@ export const CURSE_DICE_OPTIONS: Array<{ number: number; name: string; descripti
   { number: 6, name: "Curse of the Zoologist", description: "Hider photos wild animal. Seekers must photo same category.", effect: "Seekers must find and photograph a similar wild animal.", icon: Bird }
 ];
 
-export const INITIAL_COINS = 0; // This might still be relevant for Hiders if they can start with some.
+export const INITIAL_COINS_HIDER_START = 0; // Hiders start with 0 and earn them.
+export const COINS_EARNED_PER_QUESTION = 10; // Hiders earn this many coins when a question is asked.
 export const HIDING_PHASE_DURATION_MINUTES = 60;
 export const SEEKING_PHASE_DURATION_MINUTES = 120;
 export const CHALLENGE_PENALTY_MINUTES = 15;
-export const CURSE_DICE_COST = 50; // Hiders still use this
+export const CURSE_DICE_COST = 50;
 export const MAX_CURSES_PER_ROUND = 2;
 
 export const NAVIGATION_ITEMS = [
@@ -114,3 +118,4 @@ export const NAVIGATION_ITEMS = [
 // Simple placeholder for MTR lines for question examples
 export const MTR_LINES_EXAMPLE = ["Tsuen Wan Line", "Island Line", "Kwun Tong Line", "Tung Chung Line", "East Rail Line"];
 export const DISTRICTS_EXAMPLE = ["Central & Western", "Wan Chai", "Eastern", "Southern", "Yau Tsim Mong", "Sham Shui Po", "Kowloon City", "Wong Tai Sin", "Kwun Tong", "Kwai Tsing", "Tsuen Wan", "Tuen Mun", "Yuen Long", "North", "Tai Po", "Sha Tin", "Sai Kung", "Islands"];
+
