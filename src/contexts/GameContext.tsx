@@ -19,8 +19,8 @@ interface GameContextType extends GameState {
   updateHidingTime: (teamId: string, timeSeconds: number) => void;
   updateTeamCoins: (teamId: string, amount: number, operation?: 'add' | 'subtract') => void;
   setMtrMapUrl: (url: string) => void;
-  setCurrentUserRole: (role: TeamRole | null) => void; // This might not be used if PinProtectPage handles roles
-  currentUserRole: TeamRole | null; // This might not be used
+  setCurrentUserRole: (role: TeamRole | null) => void; 
+  currentUserRole: TeamRole | null; 
   isMobile: boolean;
   askQuestion: (question: AskedQuestion) => void;
   answerQuestion: (questionId: string, response: string | File) => void;
@@ -48,7 +48,7 @@ const defaultGameState: GameState = {
   currentRound: null,
   gameHistory: [],
   mtrMapUrl: MTR_MAP_PLACEHOLDER_URL,
-  adminPin: undefined,
+  adminPin: undefined, // Will be defaulted or loaded
   hiderPin: undefined,
   seekerPin: undefined,
   isAdminAuthenticated: false,
@@ -72,7 +72,14 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     // Load PINs and auth status from localStorage on initial load
-    const loadedAdminPin = localStorage.getItem('adminPin_mtrGame');
+    const adminPinStorageKey = 'adminPin_mtrGame';
+    let loadedAdminPin = localStorage.getItem(adminPinStorageKey);
+
+    if (loadedAdminPin === null) { // Only default if it truly doesn't exist in localStorage
+      loadedAdminPin = "113221";
+      localStorage.setItem(adminPinStorageKey, loadedAdminPin);
+    }
+
     const loadedHiderPin = localStorage.getItem('hiderPin_mtrGame');
     const loadedSeekerPin = localStorage.getItem('seekerPin_mtrGame');
     const loadedIsAdminAuthed = localStorage.getItem('isAdminAuthenticated_mtrGame') === 'true';
@@ -81,9 +88,9 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
 
     setGameState(prev => ({
       ...prev,
-      adminPin: loadedAdminPin || undefined,
-      hiderPin: loadedHiderPin || undefined,
-      seekerPin: loadedSeekerPin || undefined,
+      adminPin: loadedAdminPin === "" ? undefined : loadedAdminPin, // Treat empty string as 'no PIN' for state logic
+      hiderPin: loadedHiderPin === "" ? undefined : loadedHiderPin,
+      seekerPin: loadedSeekerPin === "" ? undefined : loadedSeekerPin,
       isAdminAuthenticated: loadedIsAdminAuthed,
       isHiderAuthenticated: loadedIsHiderAuthed,
       isSeekerAuthenticated: loadedIsSeekerAuthed,
@@ -393,6 +400,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   const clearActiveCurse = useCallback(() => {
     setGameState(prev => {
       if (!prev.currentRound) return prev;
+      const currentCurseName = CURSE_DICE_OPTIONS.find(c => c.number === prev.currentRound?.activeCurse?.curseId)?.name;
+      toast({ title: "Curse Ended", description: `${currentCurseName || 'The active curse'} is no longer in effect.` });
       return {
         ...prev,
         currentRound: {
@@ -401,7 +410,6 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         },
       };
     });
-    toast({ title: "Curse Cleared/Ended", description: "The active curse is no longer in effect." });
   }, []);
 
  const seekerCompletesCurseAction = useCallback((photoFile?: File) => {
@@ -424,12 +432,20 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
           },
         };
       } else if (curseDetails.requiresSeekerAction === 'confirmation') {
-        clearActiveCurse(); // Call the existing clear function
-        return prev; // clearActiveCurse will update state, so return prev here to avoid double update
+         // For confirmation curses, we'll call clearActiveCurse directly which handles the toast.
+         // No state change here, as clearActiveCurse will trigger re-render.
+         // The actual clearing happens in the `clearActiveCurse` function.
       }
-      return prev; 
+      return prev; // Return previous state if no specific action matched or handled by clearActiveCurse
     });
-  }, [clearActiveCurse]); // Add clearActiveCurse to dependency array
+    // If it was a confirmation curse, clear it.
+    if (gameState.currentRound?.activeCurse) {
+        const curseDetails = CURSE_DICE_OPTIONS.find(c => c.number === gameState.currentRound!.activeCurse!.curseId);
+        if (curseDetails && curseDetails.requiresSeekerAction === 'confirmation') {
+            clearActiveCurse();
+        }
+    }
+  }, [clearActiveCurse, gameState.currentRound?.activeCurse]);
 
   const hiderAcknowledgesSeekerPhoto = useCallback(() => {
     setGameState(prev => {
@@ -437,28 +453,29 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         toast({ title: "Error", description: "No seeker photo to acknowledge or no active curse.", variant: "destructive" });
         return prev;
       }
-      clearActiveCurse(); // Call the existing clear function
-      return prev; // clearActiveCurse will update state
+       // The actual clearing happens in the `clearActiveCurse` function.
+      return prev; 
     });
-  }, [clearActiveCurse]); // Add clearActiveCurse to dependency array
+    clearActiveCurse();
+  }, [clearActiveCurse]); 
 
   // PIN and Auth Logic
   const setAdminPin = useCallback((pin: string) => {
-    setGameState(prev => ({ ...prev, adminPin: pin }));
-    localStorage.setItem('adminPin_mtrGame', pin);
-    toast({ title: "Admin PIN Set", description: "Admin access PIN has been updated." });
+    setGameState(prev => ({ ...prev, adminPin: pin === "" ? undefined : pin }));
+    localStorage.setItem('adminPin_mtrGame', pin); // Store empty string if cleared, or the pin itself
+    toast({ title: "Admin PIN Updated", description: `Admin access PIN has been ${pin === "" ? "cleared" : "set"}.` });
   }, []);
 
   const setHiderPin = useCallback((pin: string) => {
-    setGameState(prev => ({ ...prev, hiderPin: pin }));
+    setGameState(prev => ({ ...prev, hiderPin: pin === "" ? undefined : pin }));
     localStorage.setItem('hiderPin_mtrGame', pin);
-    toast({ title: "Hider PIN Set", description: "Hider panel access PIN has been updated." });
+    toast({ title: "Hider PIN Updated", description: `Hider panel PIN has been ${pin === "" ? "cleared" : "set"}.` });
   }, []);
 
   const setSeekerPin = useCallback((pin: string) => {
-    setGameState(prev => ({ ...prev, seekerPin: pin }));
+    setGameState(prev => ({ ...prev, seekerPin: pin === "" ? undefined : pin }));
     localStorage.setItem('seekerPin_mtrGame', pin);
-    toast({ title: "Seeker PIN Set", description: "Seeker panel access PIN has been updated." });
+    toast({ title: "Seeker PIN Updated", description: `Seeker panel PIN has been ${pin === "" ? "cleared" : "set"}.` });
   }, []);
 
   const authenticateAdmin = useCallback((enteredPin: string): boolean => {
@@ -545,3 +562,4 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     </GameContext.Provider>
   );
 };
+

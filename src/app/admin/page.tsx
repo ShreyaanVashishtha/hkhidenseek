@@ -143,28 +143,25 @@ function AdminPageContent() {
     }
   };
 
-  const handleClearCurse = () => {
+  const handleAdminClearCurse = () => {
     if (currentRound && currentRound.activeCurse) {
       clearActiveCurse();
-      toast({ title: "Curse Cleared", description: "The active curse has been cleared by admin." });
+      toast({ title: "Curse Cleared by Admin", description: "The active curse has been cleared." });
     } else {
       toast({ title: "Error", description: "No active curse to clear.", variant: "destructive" });
     }
   };
 
   const handleSetAdminPin = () => {
-    if (adminPinInput.trim()) setAdminPin(adminPinInput.trim());
-    else toast({ title: "Error", description: "Admin PIN cannot be empty.", variant: "destructive"});
+    setAdminPin(adminPinInput.trim()); // Context handles empty string for clearing
     setAdminPinInput("");
   };
   const handleSetHiderPin = () => {
-    if (hiderPinInput.trim()) setHiderPin(hiderPinInput.trim());
-    else toast({ title: "Error", description: "Hider PIN cannot be empty.", variant: "destructive"});
+    setHiderPin(hiderPinInput.trim());
     setHiderPinInput("");
   };
   const handleSetSeekerPin = () => {
-    if (seekerPinInput.trim()) setSeekerPin(seekerPinInput.trim());
-    else toast({ title: "Error", description: "Seeker PIN cannot be empty.", variant: "destructive"});
+    setSeekerPin(seekerPinInput.trim());
     setSeekerPinInput("");
   };
   
@@ -179,27 +176,27 @@ function AdminPageContent() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><KeyRound /> Access Control & PIN Management</CardTitle>
-          <CardDescription>Set or update PINs for accessing different game panels. Clear PINs by setting an empty value (not recommended for Admin PIN if game is public).</CardDescription>
+          <CardDescription>Set or update PINs for accessing different game panels. Clear a PIN by submitting an empty value.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="space-y-2">
-            <Label htmlFor="admin-pin">Admin Panel PIN (current: {adminPin ? "Set" : "Not Set"})</Label>
+            <Label htmlFor="admin-pin">Admin Panel PIN (current: {adminPin ? "Set" : "Not Set - defaults to 113221 on first load"})</Label>
             <div className="flex gap-2">
-              <Input id="admin-pin" type="password" value={adminPinInput} onChange={(e) => setAdminPinInput(e.target.value)} placeholder="Enter new Admin PIN" />
+              <Input id="admin-pin" type="password" value={adminPinInput} onChange={(e) => setAdminPinInput(e.target.value)} placeholder="Enter new Admin PIN or leave blank to clear" />
               <Button onClick={handleSetAdminPin}>Set Admin PIN</Button>
             </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="hider-pin">Hider Panel PIN (current: {hiderPin ? "Set" : "Not Set"})</Label>
+            <Label htmlFor="hider-pin">Hider Panel PIN (current: {hiderPin ? hiderPin : "Not Set"})</Label>
             <div className="flex gap-2">
-              <Input id="hider-pin" type="password" value={hiderPinInput} onChange={(e) => setHiderPinInput(e.target.value)} placeholder="Enter new Hider PIN" />
+              <Input id="hider-pin" type="password" value={hiderPinInput} onChange={(e) => setHiderPinInput(e.target.value)} placeholder="Enter new Hider PIN or leave blank to clear" />
               <Button onClick={handleSetHiderPin}>Set Hider PIN</Button>
             </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="seeker-pin">Seeker Panel PIN (current: {seekerPin ? "Set" : "Not Set"})</Label>
+            <Label htmlFor="seeker-pin">Seeker Panel PIN (current: {seekerPin ? seekerPin : "Not Set"})</Label>
             <div className="flex gap-2">
-              <Input id="seeker-pin" type="password" value={seekerPinInput} onChange={(e) => setSeekerPinInput(e.target.value)} placeholder="Enter new Seeker PIN" />
+              <Input id="seeker-pin" type="password" value={seekerPinInput} onChange={(e) => setSeekerPinInput(e.target.value)} placeholder="Enter new Seeker PIN or leave blank to clear" />
               <Button onClick={handleSetSeekerPin}>Set Seeker PIN</Button>
             </div>
           </div>
@@ -372,7 +369,7 @@ function AdminPageContent() {
             <Forward /> Force Start Seeking Phase
           </Button>
           <Button 
-            onClick={handleClearCurse} 
+            onClick={handleAdminClearCurse} 
             disabled={!currentRound || !currentRound.activeCurse} 
             variant="outline"
             className="flex items-center gap-2"
@@ -400,3 +397,4 @@ export default function AdminPage() {
     </PinProtectPage>
   );
 }
+
