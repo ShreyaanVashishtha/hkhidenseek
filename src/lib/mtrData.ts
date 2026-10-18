@@ -276,3 +276,15 @@ export const MTR_STATIONS: Record<string, MTRStation> = {
   'airport': { id: 'airport', lat: 22.316, lng: 113.9366, name: 'Airport', nameZh: '機場', lines: ['AEL'], isInterchange: false, x: 80, y: 440, district: 'Islands', labelPlacement: 'left', labelDx: -14 },
   'asiaworld-expo': { id: 'asiaworld-expo', lat: 22.3209, lng: 113.9427, name: 'AsiaWorld-Expo', nameZh: '博覽館', lines: ['AEL'], isInterchange: false, x: 40, y: 380, district: 'Islands', labelPlacement: 'top', labelDy: -14 }
 };
+
+export function calculateHaversineDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371; // Earth's radius in km
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}

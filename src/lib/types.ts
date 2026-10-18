@@ -15,7 +15,7 @@ export interface Team {
   cursesUsed: number;
 }
 
-export type QuestionCategory = "Radar" | "Precision" | "Relative" | "Photo" | "Scan";
+export type QuestionCategory = "Radar" | "Precision" | "Relative" | "Photo" | "Scan" | "Thermometer";
 
 export interface QuestionOption {
   id: string;
@@ -38,12 +38,63 @@ export interface AskedQuestion {
   isTruthful?: boolean;
   timestamp: Date;
   askingTeamId: string;
+  stationAId?: string; // For Thermometer questions
+  stationBId?: string;
+}
+
+export type ChallengeDifficulty = 'easy' | 'medium' | 'hard';
+
+export interface ChallengeCard {
+  id: string;
+  title: string;
+  description: string;
+  difficulty: ChallengeDifficulty;
+  coinsReward: number;
+  timeLimitMinutes?: number;
+  category: 'transit' | 'food' | 'culture' | 'physical' | 'stealth';
+  requiresPhotoProof?: boolean;
+}
+
+export interface ActiveChallenge {
+  card: ChallengeCard;
+  startTime: Date;
+  status: 'active' | 'completed' | 'failed' | 'vetoed';
+  submittedPhotoUrl?: string;
+  completedAt?: Date;
 }
 
 export interface Challenge {
-  id:string;
+  id: string;
   description: string;
   status: "pending" | "completed" | "failed" | "vetoed";
+}
+
+export type TimelineEventType =
+  | 'round_start'
+  | 'hiding_locked'
+  | 'seeking_start'
+  | 'question_asked'
+  | 'question_answered'
+  | 'challenge_drawn'
+  | 'challenge_completed'
+  | 'challenge_vetoed'
+  | 'curse_activated'
+  | 'curse_resolved'
+  | 'endgame_breach'
+  | 'tagged'
+  | 'round_completed';
+
+export interface TimelineEvent {
+  id: string;
+  timestamp: Date;
+  type: TimelineEventType;
+  title: string;
+  description: string;
+  teamId?: string;
+  teamName?: string;
+  teamRole?: 'hider' | 'seeker';
+  badge?: string;
+  photoUrl?: string;
 }
 
 export type CurseDiceOutcome = 1 | 2 | 3 | 4 | 5 | 6;
@@ -58,7 +109,6 @@ export interface CurseRule {
   requiresSeekerAction?: 'photo' | 'confirmation';
   requiresHiderTextInput?: boolean;
 }
-
 
 export interface ActiveCurseInfo {
   curseId: number;
@@ -79,6 +129,19 @@ export interface GameRound {
   status: "pending" | "hiding-phase" | "seeking-phase" | "completed";
   askedQuestions: AskedQuestion[];
   activeCurse: ActiveCurseInfo | null;
+  // Jet Lag Hide & Seek additions:
+  timeline?: TimelineEvent[];
+  activeChallenge?: ActiveChallenge | null;
+  drawnChallengeOptions?: ChallengeCard[];
+  eliminatedStationIds?: string[];
+  lockedHiderStationId?: string;
+  isEndgameBreached?: boolean;
+  tagEvent?: {
+    taggedAt: Date;
+    taggedByTeamId: string;
+    photoUrl?: string;
+  };
+  seekerPenaltyEndTime?: Date;
 }
 
 export interface GameState {
@@ -90,6 +153,7 @@ export interface GameState {
   adminPin?: string;
   hiderPin?: string;
   seekerPin?: string;
+  soundEnabled?: boolean;
 }
 
 export type TeamRole = "hider" | "seeker" | "admin" | "spectator";

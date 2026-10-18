@@ -16,11 +16,15 @@ import { PageHeader } from "@/components/PageHeader";
 import { TimerDisplay } from "@/components/game/TimerDisplay";
 import { VetoConsequenceModal } from "@/components/game/VetoConsequenceModal";
 import { useToast } from '@/hooks/use-toast';
-import { Search, ShieldQuestion, Send, ThumbsUp, ThumbsDown, ListChecks, Zap, Upload, CheckSquare, AlertTriangle, Dice6 } from "lucide-react";
+import { Search, ShieldQuestion, Send, ThumbsUp, ThumbsDown, ListChecks, Zap, Upload, CheckSquare, AlertTriangle, Dice6, Sparkles, Coins, Trophy, Flame } from "lucide-react";
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Badge } from '@/components/ui/badge';
 import { PinProtectPage } from '@/components/auth/PinProtectPage';
 import { MTRMapDisplay } from "@/components/game/MTRMapDisplay";
-import type { MTRStation } from "@/lib/mtrData";
+import { MTR_STATIONS, MTRStation } from "@/lib/mtrData";
+import { ChallengeDeckModal } from "@/components/game/ChallengeDeckModal";
+import { EndgameBreachModal } from "@/components/game/EndgameBreachModal";
+import { MatchTimeline } from "@/components/game/MatchTimeline";
 
 interface PhotoResponseDisplayProps {
   imageUrl: string; 
@@ -108,61 +112,78 @@ const SeekerCursePhotoUpload: React.FC<SeekerCursePhotoUploadProps> = ({ onPhoto
 
 
 function SeekerPageContent() {
-  const { teams, currentRound, startSeekingPhase, askQuestion, clearActiveCurse, seekerCompletesCurseAction } = useGameContext();
+  const { 
+    teams, 
+    currentRound, 
+    startSeekingPhase, 
+    askQuestion, 
+    clearActiveCurse, 
+    seekerCompletesCurseAction,
+    acceptChallengeCard,
+    completeChallengeCard,
+    vetoChallengeCard,
+    tagHider,
+  } = useGameContext();
   const { toast } = useToast();
 
   const [myTeam, setMyTeam] = useState<Team | undefined>(undefined);
   
-  const [currentChallengeDescription, setCurrentChallengeDescription] = useState<string>("");
-  const [challenges, setChallenges] = useState<Challenge[]>([]); 
-  
   const [selectedQuestionType, setSelectedQuestionType] = useState<QuestionOptionType | undefined>(undefined);
   const [questionText, setQuestionText] = useState("");
+  const [stationAId, setStationAId] = useState<string>("");
+  const [stationBId, setStationBId] = useState<string>("");
 
-  const [isPenaltyActive, setIsPenaltyActive] = useState(false);
-  const [penaltyEndTime, setPenaltyEndTime] = useState<Date | null>(null);
+  const [isChallengeModalOpen, setIsChallengeModalOpen] = useState(false);
   const [gamblerSteps, setGamblerSteps] = useState<number | null>(null);
-
 
   useEffect(() => {
     if (currentRound && currentRound.seekingTeams.length > 0) {
         const userTeam = teams.find(t => currentRound.seekingTeams.some(st => st.id === t.id) && t.isSeeking);
         setMyTeam(userTeam);
     } else if (teams.some(t => t.isSeeking)) {
-        // Fallback if currentRound.seekingTeams is not yet populated but a team is marked as seeker
         setMyTeam(teams.find(t => t.isSeeking)); 
     } else {
         setMyTeam(undefined); 
     }
   }, [teams, currentRound]);
 
-  const handleChallengeSubmit = (status: "completed" | "failed" | "vetoed") => {
-    if (!myTeam) {
-      toast({ title: "Error", description: "No seeking team assigned.", variant: "destructive" });
+  // Thermometer question auto-formatter
+  useEffect(() => {
+    if (selectedQuestionType?.category === 'Thermometer') {
+      if (stationAId && stationBId) {
+        const stA = MTR_STATIONS[stationAId];
+        const stB = MTR_STATIONS[stationBId];
+        if (stA && stB) {
+          setQuestionText(`Are you closer to ${stA.name} (${stA.nameZh}) or ${stB.name} (${stB.nameZh})?`);
+        }
+      }
+    }
+  }, [selectedQuestionType, stationAId, stationBId]);
+
+  // Check penalty active from round or local
+  const penaltyEndTime = currentRound?.seekerPenaltyEndTime ? new Date(currentRound.seekerPenaltyEndTime) : null;
+  const isPenaltyActive = Boolean(penaltyEndTime && penaltyEndTime.getTime() > Date.now());
+  const [penaltyTimeRemaining, setPenaltyTimeRemaining] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!penaltyEndTime) {
+      setPenaltyTimeRemaining(null);
       return;
     }
-    if (!currentChallengeDescription) {
-        toast({ title: "Error", description: "Challenge description cannot be empty.", variant: "destructive" });
-        return;
-    }
-
-    const challenge: Challenge = {
-      id: `challenge-${Date.now()}`,
-      description: currentChallengeDescription,
-      status,
+    const updateCountdown = () => {
+      const diffSecs = Math.max(0, Math.floor((penaltyEndTime.getTime() - Date.now()) / 1000));
+      if (diffSecs <= 0) {
+        setPenaltyTimeRemaining(null);
+      } else {
+        const mins = Math.floor(diffSecs / 60);
+        const secs = diffSecs % 60;
+        setPenaltyTimeRemaining(`${mins}m ${secs < 10 ? '0' : ''}${secs}s`);
+      }
     };
-    setChallenges(prev => [challenge, ...prev]); 
-
-    if (status === "completed") {
-      toast({ title: "Challenge Completed!", description: `Good job, ${myTeam.name}!` });
-    } else { 
-      setIsPenaltyActive(true);
-      const newPenaltyEndTime = new Date(Date.now() + CHALLENGE_PENALTY_MINUTES * 60 * 1000);
-      setPenaltyEndTime(newPenaltyEndTime);
-      toast({ title: `Challenge ${status === "failed" ? "Failed" : "Vetoed"}`, description: `${CHALLENGE_PENALTY_MINUTES} min penalty for ${myTeam.name}.`, variant: "destructive" });
-    }
-    setCurrentChallengeDescription("");
-  };
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 1000);
+    return () => clearInterval(interval);
+  }, [penaltyEndTime]);
 
   const handleAskQuestion = () => {
     if (!myTeam) {
@@ -174,7 +195,7 @@ function SeekerPageContent() {
         return;
     }
     if (isPenaltyActive) {
-        toast({ title: "Penalty Active", description: "Cannot ask questions during a penalty.", variant: "destructive"});
+        toast({ title: "Penalty Active", description: "Cannot ask questions during a freeze penalty.", variant: "destructive"});
         return;
     }
     if (currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved') {
@@ -189,13 +210,17 @@ function SeekerPageContent() {
       text: questionText,
       timestamp: new Date(),
       askingTeamId: myTeam.id,
+      stationAId: selectedQuestionType.category === 'Thermometer' ? stationAId : undefined,
+      stationBId: selectedQuestionType.category === 'Thermometer' ? stationBId : undefined,
     };
 
     askQuestion(newQuestion); 
     toast({ title: "Question Asked!", description: `${selectedQuestionType.name} question sent. Hiders earn ${selectedQuestionType.hiderCoinsEarned} coins.` });
     
     setQuestionText("");
-    setSelectedQuestionType(undefined); 
+    setSelectedQuestionType(undefined);
+    setStationAId("");
+    setStationBId("");
   };
   
   const gamePhase = currentRound?.status || 'pending';
@@ -250,6 +275,26 @@ function SeekerPageContent() {
 
   return (
     <div className="space-y-8">
+      {/* Endgame 500m Breach Siren & Capture Dialog */}
+      <EndgameBreachModal
+        isBreached={Boolean(currentRound?.isEndgameBreached)}
+        role="seeker"
+        lockedStationName={currentRound?.lockedHiderStationId ? MTR_STATIONS[currentRound.lockedHiderStationId]?.name : undefined}
+        onConfirmTag={tagHider}
+      />
+
+      {/* Challenge Card Deck Modal */}
+      <ChallengeDeckModal
+        isOpen={isChallengeModalOpen}
+        onClose={() => setIsChallengeModalOpen(false)}
+        activeChallenge={currentRound?.activeChallenge}
+        onAcceptChallenge={acceptChallengeCard}
+        onCompleteChallenge={completeChallengeCard}
+        onVetoChallenge={vetoChallengeCard}
+        isPenaltyActive={isPenaltyActive}
+        penaltyTimeRemaining={penaltyTimeRemaining}
+      />
+
       <PageHeader 
         title={`Seeker View - Team: ${myTeam?.name || "N/A"}`}
         description={isSeekingPhase ? "Find the hiders! Complete challenges and ask questions." : "Hiding phase is active. Prepare your strategy!"}
@@ -275,8 +320,6 @@ function SeekerPageContent() {
             phaseStartTime={new Date(penaltyEndTime.getTime() - CHALLENGE_PENALTY_MINUTES * 60 * 1000)}
             isActive={isPenaltyActive}
             onTimerEnd={() => {
-              setIsPenaltyActive(false);
-              setPenaltyEndTime(null);
               toast({ title: "Penalty Over!", description: "You can resume normal actions." });
             }}
             className="lg:col-span-1"
@@ -366,53 +409,90 @@ function SeekerPageContent() {
             </Card>
           )}
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2"><ListChecks /> Challenges</CardTitle>
-              <CardDescription>Complete challenges. Penalties apply for failure or veto.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="challenge-desc">Challenge Description</Label>
-                <Textarea 
-                  id="challenge-desc" 
-                  value={currentChallengeDescription} 
-                  onChange={(e) => setCurrentChallengeDescription(e.target.value)}
-                  placeholder="Describe the physical or location-based task" 
-                  disabled={isPenaltyActive || (!!currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved')}
-                />
+          {/* Jet Lag Hong Kong Challenge Deck */}
+          <Card className="border-amber-500/40 bg-gradient-to-br from-slate-900 via-slate-900 to-amber-950/20 shadow-xl overflow-hidden">
+            <CardHeader className="pb-3 border-b border-slate-800">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-amber-400" />
+                  <CardTitle className="text-base text-white">Challenge Card Deck</CardTitle>
+                </div>
+                <div className="flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/30 px-2.5 py-1 rounded-md text-xs font-mono font-bold text-amber-300">
+                  <Coins className="h-3.5 w-3.5 text-amber-400" />
+                  <span>{myTeam?.coins ?? 0} Team Coins</span>
+                </div>
               </div>
+              <CardDescription className="text-xs text-slate-400">
+                Draw and complete authentic Hong Kong tasks to earn coins for asking questions.
+              </CardDescription>
+            </CardHeader>
+
+            <CardContent className="p-4">
+              {currentRound?.activeChallenge ? (
+                <div className="bg-slate-950/70 border border-amber-500/30 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <Badge className="bg-amber-600 text-white text-[10px]">
+                      ACTIVE: {currentRound.activeChallenge.card.difficulty.toUpperCase()}
+                    </Badge>
+                    <span className="font-mono text-xs font-bold text-amber-300">
+                      +{currentRound.activeChallenge.card.coinsReward} Coins
+                    </span>
+                  </div>
+
+                  <h4 className="font-bold text-white text-sm">
+                    {currentRound.activeChallenge.card.title}
+                  </h4>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    {currentRound.activeChallenge.card.description}
+                  </p>
+
+                  <Button
+                    onClick={() => setIsChallengeModalOpen(true)}
+                    className="w-full bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs h-8 mt-2"
+                  >
+                    Open Active Challenge & Submit Proof
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center p-6 text-center space-y-3">
+                  <div className="p-3 bg-amber-500/10 rounded-full border border-amber-500/30">
+                    <Sparkles className="h-6 w-6 text-amber-400 animate-pulse" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-white text-sm">Draw Next Challenge</h4>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Draw 2 cards from the deck and pick your task (+15 to 120 coins).
+                    </p>
+                  </div>
+                  <Button
+                    onClick={() => setIsChallengeModalOpen(true)}
+                    disabled={isPenaltyActive || !isSeekingPhase}
+                    className="bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs px-6 h-9 shadow-lg"
+                  >
+                    Draw 2 Challenge Cards
+                  </Button>
+                </div>
+              )}
             </CardContent>
-            <CardFooter className="flex flex-wrap gap-2">
-              <Button 
-                onClick={() => handleChallengeSubmit('completed')} 
-                disabled={isPenaltyActive || !currentChallengeDescription || (!!currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved')} 
-                className="bg-green-600 hover:bg-green-700 flex items-center gap-2"><ThumbsUp/>Completed</Button>
-              <Button 
-                variant="outline" 
-                onClick={() => handleChallengeSubmit('failed')} 
-                disabled={isPenaltyActive || !currentChallengeDescription || (!!currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved')} 
-                className="flex items-center gap-2"><ThumbsDown/>Failed</Button>
-              {currentChallengeDescription && 
-                <VetoConsequenceModal 
-                  challengeDescription={currentChallengeDescription} 
-                  onConfirmVeto={() => handleChallengeSubmit('vetoed')} 
-                  triggerDisabled={isPenaltyActive || !currentChallengeDescription || (!!currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved')}
-                />
-              }
-            </CardFooter>
           </Card>
           
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2"><ShieldQuestion /> Ask a Question</CardTitle>
-              <CardDescription>Get clues about the hiders' location. Questions are free for seekers.</CardDescription>
+              <CardDescription>Get clues about the hiders' location. Hiders earn coins when questions are asked.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="question-type">Question Type</Label>
                 <Select 
-                  onValueChange={(value) => setSelectedQuestionType(QUESTION_OPTIONS.find(q => q.id === value))}
+                  onValueChange={(value) => {
+                    const opt = QUESTION_OPTIONS.find(q => q.id === value);
+                    setSelectedQuestionType(opt);
+                    if (opt?.category !== 'Thermometer') {
+                      setStationAId("");
+                      setStationBId("");
+                    }
+                  }}
                   disabled={isPenaltyActive || (!!currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved')}
                   value={selectedQuestionType?.id}
                 >
@@ -420,7 +500,7 @@ function SeekerPageContent() {
                   <SelectContent>
                     {QUESTION_OPTIONS.map(q => (
                       <SelectItem key={q.id} value={q.id}>
-                        {q.name} (Hiders earn {q.hiderCoinsEarned})
+                        {q.name} (Hiders earn +{q.hiderCoinsEarned})
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -429,6 +509,44 @@ function SeekerPageContent() {
               {selectedQuestionType && (
                 <p className="text-sm text-muted-foreground">{selectedQuestionType.description}</p>
               )}
+
+              {/* Special Thermometer Station Selectors */}
+              {selectedQuestionType?.category === 'Thermometer' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-950/60 p-3 rounded-lg border border-slate-800">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-slate-300">Station A (Option 1)</Label>
+                    <Select value={stationAId} onValueChange={setStationAId}>
+                      <SelectTrigger className="bg-slate-900 border-slate-700 text-xs text-white">
+                        <SelectValue placeholder="Choose Station A..." />
+                      </SelectTrigger>
+                      <SelectContent className="bg-slate-900 border-slate-700 text-white text-xs max-h-56">
+                        {Object.values(MTR_STATIONS).map(s => (
+                          <SelectItem key={`stA-${s.id}`} value={s.id}>
+                            {s.name} ({s.nameZh})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-slate-300">Station B (Option 2)</Label>
+                    <Select value={stationBId} onValueChange={setStationBId}>
+                      <SelectTrigger className="bg-slate-900 border-slate-700 text-xs text-white">
+                        <SelectValue placeholder="Choose Station B..." />
+                      </SelectTrigger>
+                      <SelectContent className="bg-slate-900 border-slate-700 text-white text-xs max-h-56">
+                        {Object.values(MTR_STATIONS).map(s => (
+                          <SelectItem key={`stB-${s.id}`} value={s.id}>
+                            {s.name} ({s.nameZh})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-2">
                 <Label htmlFor="question-text">Your Question / Location Specifics</Label>
                 <Textarea 
@@ -446,7 +564,7 @@ function SeekerPageContent() {
                 disabled={isPenaltyActive || !selectedQuestionType || !questionText.trim() || (!!currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved')} 
                 className="flex items-center gap-2"
               >
-                <Send /> Ask Question
+                <Send className="h-4 w-4" /> Ask Question
               </Button>
             </CardFooter>
           </Card>
@@ -482,25 +600,8 @@ function SeekerPageContent() {
             </CardContent>
           </Card>
           
-          <Card>
-            <CardHeader><CardTitle>Challenge History</CardTitle></CardHeader>
-            <CardContent>
-              {challenges.length === 0 ? (
-                 <p className="text-muted-foreground">No challenges attempted yet.</p>
-              ) : (
-                <ScrollArea className="h-[200px] pr-4">
-                <ul className="space-y-2">
-                  {challenges.map(c => (
-                    <li key={c.id} className={`p-2 border rounded-md text-sm ${c.status === "completed" ? "border-green-500 bg-green-500/10" : "border-destructive bg-destructive/10"}`}>
-                      <p className="font-medium">{c.description}</p>
-                      <p>Status: {c.status}</p>
-                    </li>
-                  ))}
-                </ul>
-                </ScrollArea>
-              )}
-            </CardContent>
-          </Card>
+          {/* Live Chronological Match Timeline */}
+          <MatchTimeline events={currentRound?.timeline} maxHeight="450px" />
         </>
       )}
     </div>

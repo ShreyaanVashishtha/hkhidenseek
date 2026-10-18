@@ -1,11 +1,24 @@
 
 "use client";
 
-import type { GameState, Player, Team, GameRound, AskedQuestion, ActiveCurseInfo, CurseRule } from '@/lib/types';
+import type { 
+  GameState, 
+  Player, 
+  Team, 
+  GameRound, 
+  AskedQuestion, 
+  ActiveCurseInfo, 
+  CurseRule, 
+  ChallengeCard, 
+  ActiveChallenge, 
+  TimelineEvent 
+} from '@/lib/types';
 import { MTR_MAP_PLACEHOLDER_URL, INITIAL_COINS_HIDER_START, QUESTION_OPTIONS, CURSE_DICE_OPTIONS, MAX_CURSES_PER_ROUND, GAME_TITLE, CHALLENGE_PENALTY_MINUTES, HIDING_PHASE_DURATION_MINUTES, SEEKING_PHASE_DURATION_MINUTES, CURSE_DICE_COST } from '@/lib/constants';
 import React, { createContext, useState, useCallback, ReactNode, useEffect, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase, isSupabaseConfigured } from '@/lib/supabaseClient';
+import { soundEffects } from '@/lib/soundEffects';
+import { MTR_STATIONS } from '@/lib/mtrData';
 
 const GAME_SESSION_ID = 'current_active_game';
 const LOCAL_STORAGE_AUTH_PREFIX = `${GAME_TITLE.replace(/\s+/g, '_')}_auth_status_`;
@@ -19,6 +32,7 @@ const defaultGameState: GameState = {
   adminPin: "113221", 
   hiderPin: undefined,
   seekerPin: undefined,
+  soundEnabled: true,
 };
 
 // Helper to deserialize dates from Supabase (JSON strings to Date objects)
@@ -34,7 +48,7 @@ const deserializeDates = (obj: any): any => {
     if (Object.prototype.hasOwnProperty.call(obj, key)) {
       const value = obj[key];
       if (typeof value === 'string' && 
-          (key === 'timestamp' || key === 'startTime' || key === 'phaseStartTime' || key === 'endTime' || /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(value))) {
+          (key === 'timestamp' || key === 'startTime' || key === 'phaseStartTime' || key === 'endTime' || key === 'completedAt' || key === 'taggedAt' || key === 'seekerPenaltyEndTime' || /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(value))) {
         const date = new Date(value);
         newObj[key] = !isNaN(date.getTime()) ? date : value;
       } else {
@@ -167,6 +181,21 @@ interface GameContextType extends GameState {
   clearActiveCurse: () => void;
   seekerCompletesCurseAction: (photoFile?: File) => Promise<void>;
   hiderAcknowledgesSeekerPhoto: () => void;
+
+  // Jet Lag Hide & Seek methods
+  soundEnabled: boolean;
+  toggleSound: () => void;
+  eliminatedStationIds: string[];
+  toggleEliminateStation: (stationId: string) => void;
+  eliminateStationsBulk: (stationIds: string[], action: 'eliminate' | 'restore') => void;
+  resetEliminations: () => void;
+  acceptChallengeCard: (card: ChallengeCard) => void;
+  completeChallengeCard: (card: ChallengeCard, photoFile?: File) => Promise<void>;
+  vetoChallengeCard: (card: ChallengeCard) => void;
+  lockHiderStation: (stationId: string) => void;
+  declareEndgameBreach: () => void;
+  tagHider: (photoFile?: File) => Promise<void>;
+  addTimelineEvent: (event: Omit<TimelineEvent, 'id' | 'timestamp'>) => void;
   
   authenticateAdmin: (enteredPin: string) => boolean;
   authenticateHider: (enteredPin: string) => boolean;
@@ -459,8 +488,9 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       }
 
       const roundStartTime = new Date();
+      const roundNum = (prev.currentRound?.roundNumber || 0) + 1;
       const newRound: GameRound = {
-        roundNumber: (prev.currentRound?.roundNumber || 0) + 1,
+        roundNumber: roundNum,
         hidingTeam: { ...hidingTeamForRound }, 
         seekingTeams: seekingTeamsForRound.map(st => ({ ...st })), 
         startTime: roundStartTime,
@@ -468,6 +498,22 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         status: 'hiding-phase',
         askedQuestions: [],
         activeCurse: null,
+        timeline: [
+          {
+            id: `tl-${Date.now()}`,
+            timestamp: roundStartTime,
+            type: 'round_start',
+            title: `Round ${roundNum} Commenced`,
+            description: `${hidingTeamForRound.name} is hiding! Hiders have 60 minutes to travel and lock into their 500m zone.`,
+            badge: 'Round Start',
+            teamName: hidingTeamForRound.name,
+            teamRole: 'hider',
+          }
+        ],
+        eliminatedStationIds: [],
+        lockedHiderStationId: undefined,
+        isEndgameBreached: false,
+        activeChallenge: null,
       };
 
       return {
@@ -479,16 +525,29 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   }, [setGameState, toast]);
 
   const startSeekingPhase = useCallback(() => {
+    soundEffects.playVictory();
     setGameState(prev => {
       if (!prev.currentRound || prev.currentRound.status !== 'hiding-phase') {
         return prev;
       }
+      const seekingStart = new Date();
+      const existingTimeline = prev.currentRound.timeline || [];
+      const newEvent: TimelineEvent = {
+        id: `tl-${Date.now()}`,
+        timestamp: seekingStart,
+        type: 'seeking_start',
+        title: 'Seeking Phase Begun',
+        description: 'Hiding period concluded! Seekers are now unleashed across the MTR network to pull challenges and ask questions.',
+        badge: 'Seeking Phase',
+      };
+
       return {
         ...prev,
         currentRound: {
           ...prev.currentRound,
           status: 'seeking-phase',
-          phaseStartTime: new Date(),
+          phaseStartTime: seekingStart,
+          timeline: [...existingTimeline, newEvent],
         },
       };
     });
@@ -591,6 +650,18 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
          console.log(`[ASK_QUESTION] Awarded ${coinsToAward} coins to hider team ${hiderTeamId}. New total: ${updatedHidingTeamInRound.coins}`);
       }
       
+      soundEffects.playTick();
+      const existingTimeline = prev.currentRound.timeline || [];
+      const newEvent: TimelineEvent = {
+        id: `tl-${Date.now()}`,
+        timestamp: new Date(),
+        type: 'question_asked',
+        title: `${question.category} Question Asked`,
+        description: `Seekers asked: "${question.text}". Hiders earn +${coinsToAward} coins.`,
+        badge: question.category,
+        teamRole: 'seeker',
+      };
+
       const updatedAskedQuestions = [...prev.currentRound.askedQuestions, question];
       console.log(`[ASK_QUESTION] Adding new question. Total questions now: ${updatedAskedQuestions.length}. New question:`, JSON.stringify(question));
       
@@ -598,6 +669,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         ...prev.currentRound,
         hidingTeam: updatedHidingTeamInRound,
         askedQuestions: updatedAskedQuestions,
+        timeline: [...existingTimeline, newEvent],
       };
 
       return { ...prev, teams: updatedTeams, currentRound: updatedRound };
@@ -613,7 +685,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     } else if (response instanceof File) {
       toast({ title: "Uploading Photo...", description: "Please wait." });
       const uploadedUrl = await uploadPhotoToSupabaseStorage(response, 'public/question_responses');
-      if (uploadedUrl && typeof uploadedUrl === 'string' && uploadedUrl.startsWith('http')) {
+      if (uploadedUrl && typeof uploadedUrl === 'string') {
         finalResponse = uploadedUrl;
         toast({ title: "Photo Uploaded!", description: "Your photo response has been sent." });
         console.log(`[ANSWER_QUESTION] Photo uploaded for question ${questionId}, URL: ${finalResponse}`);
@@ -625,6 +697,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     }
 
     if (finalResponse !== undefined) {
+      soundEffects.playCoin();
       console.log(`[ANSWER_QUESTION] Setting final response for question ${questionId}: ${finalResponse}`);
       setGameState(prev => {
         if (!prev.currentRound) {
@@ -645,21 +718,32 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
             console.error(`[ANSWER_QUESTION] Question with ID ${questionId} not found in currentRound.askedQuestions.`);
             return prev;
         }
-        
-        const updatedQuestionForLog = updatedAskedQuestions.find(q => q.id === questionId);
-        console.log('[ANSWER_QUESTION] Updated question object:', JSON.stringify(updatedQuestionForLog));
-        console.log('[ANSWER_QUESTION] Full updatedAskedQuestions array being set to currentRound:', updatedAskedQuestions.map(q => ({id: q.id, response: q.response ? String(q.response).substring(0,70)+'...' : undefined })));
+
+        const answeredQ = prev.currentRound.askedQuestions.find(q => q.id === questionId);
+        const existingTimeline = prev.currentRound.timeline || [];
+        const isPhoto = finalResponse.startsWith('http') || finalResponse.startsWith('data:');
+        const newEvent: TimelineEvent = {
+          id: `tl-${Date.now()}`,
+          timestamp: new Date(),
+          type: 'question_answered',
+          title: `Question Answered (${answeredQ?.category || 'Clue'})`,
+          description: `Hider responded: "${isPhoto ? '[Photo Clue Attached]' : finalResponse}"`,
+          badge: 'Answered',
+          teamRole: 'hider',
+          photoUrl: isPhoto ? finalResponse : undefined,
+        };
         
         return {
           ...prev,
           currentRound: {
             ...prev.currentRound,
             askedQuestions: updatedAskedQuestions,
+            timeline: [...existingTimeline, newEvent],
           },
         };
       });
     } else {
-      console.error(`[ANSWER_QUESTION] Final response for question ${questionId} is undefined. Photo upload might have failed silently or an unexpected response type was encountered.`);
+      console.error(`[ANSWER_QUESTION] Final response for question ${questionId} is undefined.`);
       toast({ title: "Response Error", description: "Failed to process response for question.", variant: "destructive" });
     }
   }, [setGameState, toast]);
@@ -686,9 +770,10 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   }, [setGameState]);
 
   const activateCurse = useCallback((hiderTeamId: string, rolledCurseNumber: number, hiderInputText?: string) => {
+    soundEffects.playCurseAlarm();
     setGameState(prev => {
       if (!prev.currentRound || !prev.currentRound.hidingTeam || prev.currentRound.hidingTeam.id !== hiderTeamId) {
-        toast({ title: "Error", description: "Cannot activate curse. Hiding team mismatch or no active round.", variant: "destructive" })
+        toast({ title: "Error", description: "Cannot activate curse. Hiding team mismatch or no active round.", variant: "destructive" });
         return prev;
       }
 
@@ -700,8 +785,28 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       if (hiderInputText) {
         activeCurseInfo.hiderInputText = hiderInputText;
       }
+
+      const existingTimeline = prev.currentRound.timeline || [];
+      const curseRule = CURSE_DICE_OPTIONS.find(c => c.number === rolledCurseNumber);
+      const newEvent: TimelineEvent = {
+        id: `tl-${Date.now()}`,
+        timestamp: new Date(),
+        type: 'curse_activated',
+        title: `Curse Activated: ${curseRule?.name || `Curse #${rolledCurseNumber}`}`,
+        description: `${curseRule?.description || 'A curse was cast on the seekers!'}`,
+        badge: `Curse #${rolledCurseNumber}`,
+        teamRole: 'hider',
+      };
+
       console.log(`[ACTIVATE_CURSE] Activating curse ${rolledCurseNumber} for team ${hiderTeamId}. Hider input: ${hiderInputText || 'N/A'}`);
-      return { ...prev, currentRound: { ...prev.currentRound, activeCurse: activeCurseInfo } };
+      return { 
+        ...prev, 
+        currentRound: { 
+          ...prev.currentRound, 
+          activeCurse: activeCurseInfo,
+          timeline: [...existingTimeline, newEvent]
+        } 
+      };
     });
   }, [setGameState, toast]);
 
@@ -765,6 +870,325 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     console.log('[HIDER_ACK_PHOTO] Hider acknowledged seeker photo. Clearing curse.');
     clearActiveCurse(); 
   }, [clearActiveCurse]); 
+
+  // --- JET LAG HIDE & SEEK METHODS ---
+
+  const toggleSound = useCallback(() => {
+    setGameState(prev => {
+      const nextSound = !(prev.soundEnabled ?? true);
+      soundEffects.setEnabled(nextSound);
+      return { ...prev, soundEnabled: nextSound };
+    });
+  }, [setGameState]);
+
+  const lockHiderStation = useCallback((stationId: string) => {
+    soundEffects.playCoin();
+    setGameState(prev => {
+      if (!prev.currentRound) return prev;
+      const st = MTR_STATIONS[stationId];
+      const stName = st ? `${st.name} (${st.nameZh})` : stationId;
+      const existingTimeline = prev.currentRound.timeline || [];
+      const newEvent: TimelineEvent = {
+        id: `tl-${Date.now()}`,
+        timestamp: new Date(),
+        type: 'hiding_locked',
+        title: 'Hiding Territory Anchored',
+        description: `Hiders have anchored their secret 500m hiding perimeter at ${stName}.`,
+        badge: 'Zone Locked',
+        teamRole: 'hider',
+      };
+
+      return {
+        ...prev,
+        currentRound: {
+          ...prev.currentRound,
+          lockedHiderStationId: stationId,
+          timeline: [...existingTimeline, newEvent],
+        },
+      };
+    });
+  }, [setGameState]);
+
+  const toggleEliminateStation = useCallback((stationId: string) => {
+    setGameState(prev => {
+      if (!prev.currentRound) return prev;
+      const currentEliminated = prev.currentRound.eliminatedStationIds || [];
+      const isAlready = currentEliminated.includes(stationId);
+      const nextEliminated = isAlready
+        ? currentEliminated.filter(id => id !== stationId)
+        : [...currentEliminated, stationId];
+
+      return {
+        ...prev,
+        currentRound: {
+          ...prev.currentRound,
+          eliminatedStationIds: nextEliminated,
+        },
+      };
+    });
+  }, [setGameState]);
+
+  const eliminateStationsBulk = useCallback((stationIds: string[], action: 'eliminate' | 'restore') => {
+    setGameState(prev => {
+      if (!prev.currentRound) return prev;
+      const currentEliminated = prev.currentRound.eliminatedStationIds || [];
+      let nextEliminated: string[];
+
+      if (action === 'eliminate') {
+        const set = new Set([...currentEliminated, ...stationIds]);
+        nextEliminated = Array.from(set);
+      } else {
+        const removeSet = new Set(stationIds);
+        nextEliminated = currentEliminated.filter(id => !removeSet.has(id));
+      }
+
+      return {
+        ...prev,
+        currentRound: {
+          ...prev.currentRound,
+          eliminatedStationIds: nextEliminated,
+        },
+      };
+    });
+  }, [setGameState]);
+
+  const resetEliminations = useCallback(() => {
+    setGameState(prev => {
+      if (!prev.currentRound) return prev;
+      return {
+        ...prev,
+        currentRound: {
+          ...prev.currentRound,
+          eliminatedStationIds: [],
+        },
+      };
+    });
+  }, [setGameState]);
+
+  const acceptChallengeCard = useCallback((card: ChallengeCard) => {
+    soundEffects.playCardDraw();
+    setGameState(prev => {
+      if (!prev.currentRound) return prev;
+      const existingTimeline = prev.currentRound.timeline || [];
+      const newEvent: TimelineEvent = {
+        id: `tl-${Date.now()}`,
+        timestamp: new Date(),
+        type: 'challenge_drawn',
+        title: `Challenge Accepted: ${card.title}`,
+        description: `Seekers accepted "${card.title}" (${card.difficulty.toUpperCase()} tier). Reward: +${card.coinsReward} coins.`,
+        badge: `+${card.coinsReward} Coins`,
+        teamRole: 'seeker',
+      };
+
+      return {
+        ...prev,
+        currentRound: {
+          ...prev.currentRound,
+          activeChallenge: {
+            card,
+            startTime: new Date(),
+            status: 'active',
+          },
+          timeline: [...existingTimeline, newEvent],
+        },
+      };
+    });
+  }, [setGameState]);
+
+  const completeChallengeCard = useCallback(async (card: ChallengeCard, photoFile?: File) => {
+    let uploadedPhotoUrl: string | undefined = undefined;
+    if (photoFile) {
+      const url = await uploadPhotoToSupabaseStorage(photoFile, 'public/challenge_proofs');
+      if (url && typeof url === 'string') {
+        uploadedPhotoUrl = url;
+      }
+    }
+
+    soundEffects.playCoin();
+
+    setGameState(prev => {
+      if (!prev.currentRound) return prev;
+      const seekingTeam = prev.currentRound.seekingTeams[0];
+      const seekerTeamId = seekingTeam?.id;
+
+      const updatedTeams = prev.teams.map(t => {
+        if (t.id === seekerTeamId || t.isSeeking) {
+          return { ...t, coins: (t.coins || 0) + card.coinsReward };
+        }
+        return t;
+      });
+
+      const updatedSeekingTeams = prev.currentRound.seekingTeams.map(t => ({
+        ...t,
+        coins: (t.coins || 0) + card.coinsReward,
+      }));
+
+      const existingTimeline = prev.currentRound.timeline || [];
+      const newEvent: TimelineEvent = {
+        id: `tl-${Date.now()}`,
+        timestamp: new Date(),
+        type: 'challenge_completed',
+        title: `Challenge Completed: ${card.title}`,
+        description: `Seekers succeeded at "${card.title}"! Earned +${card.coinsReward} coins for the team bank.`,
+        badge: `+${card.coinsReward} Earned`,
+        teamRole: 'seeker',
+        photoUrl: uploadedPhotoUrl,
+      };
+
+      return {
+        ...prev,
+        teams: updatedTeams,
+        currentRound: {
+          ...prev.currentRound,
+          seekingTeams: updatedSeekingTeams,
+          activeChallenge: null,
+          timeline: [...existingTimeline, newEvent],
+        },
+      };
+    });
+  }, [setGameState]);
+
+  const vetoChallengeCard = useCallback((card: ChallengeCard) => {
+    soundEffects.playCurseAlarm();
+    const penaltyEnd = new Date(Date.now() + 15 * 60 * 1000);
+
+    setGameState(prev => {
+      if (!prev.currentRound) return prev;
+      const existingTimeline = prev.currentRound.timeline || [];
+      const newEvent: TimelineEvent = {
+        id: `tl-${Date.now()}`,
+        timestamp: new Date(),
+        type: 'challenge_vetoed',
+        title: `Challenge Vetoed: ${card.title}`,
+        description: `Seekers chose to veto "${card.title}". 15-minute freeze penalty activated (no MTR transit, no questions).`,
+        badge: '15m Penalty',
+        teamRole: 'seeker',
+      };
+
+      return {
+        ...prev,
+        currentRound: {
+          ...prev.currentRound,
+          activeChallenge: null,
+          seekerPenaltyEndTime: penaltyEnd,
+          timeline: [...existingTimeline, newEvent],
+        },
+      };
+    });
+  }, [setGameState]);
+
+  const declareEndgameBreach = useCallback(() => {
+    soundEffects.playBreachAlarm();
+    setGameState(prev => {
+      if (!prev.currentRound || prev.currentRound.isEndgameBreached) return prev;
+      const existingTimeline = prev.currentRound.timeline || [];
+      const lockedSt = prev.currentRound.lockedHiderStationId ? MTR_STATIONS[prev.currentRound.lockedHiderStationId] : null;
+      const stName = lockedSt ? `${lockedSt.name} (${lockedSt.nameZh})` : 'Hider Zone';
+
+      const newEvent: TimelineEvent = {
+        id: `tl-${Date.now()}`,
+        timestamp: new Date(),
+        type: 'endgame_breach',
+        title: '🚨 ENDGAME 500m ZONE BREACHED!',
+        description: `Seekers have penetrated the 500m perimeter around ${stName}! Photo questions are permanently disabled. Foot pursuit begins!`,
+        badge: 'BREACH!',
+      };
+
+      return {
+        ...prev,
+        currentRound: {
+          ...prev.currentRound,
+          isEndgameBreached: true,
+          timeline: [...existingTimeline, newEvent],
+        },
+      };
+    });
+  }, [setGameState]);
+
+  const tagHider = useCallback(async (photoFile?: File) => {
+    let uploadedPhotoUrl: string | undefined = undefined;
+    if (photoFile) {
+      const url = await uploadPhotoToSupabaseStorage(photoFile, 'public/tag_photos');
+      if (url && typeof url === 'string') {
+        uploadedPhotoUrl = url;
+      }
+    }
+
+    soundEffects.playVictory();
+
+    setGameState(prev => {
+      if (!prev.currentRound) return prev;
+      const endTime = new Date();
+      const phaseStart = prev.currentRound.phaseStartTime ? new Date(prev.currentRound.phaseStartTime) : new Date(prev.currentRound.startTime || endTime);
+      const totalHidingSeconds = Math.max(0, Math.floor((endTime.getTime() - phaseStart.getTime()) / 1000));
+      const hours = Math.floor(totalHidingSeconds / 3600);
+      const mins = Math.floor((totalHidingSeconds % 3600) / 60);
+      const secs = totalHidingSeconds % 60;
+      const durationStr = `${hours > 0 ? `${hours}h ` : ''}${mins}m ${secs}s`;
+
+      const seekingTeam = prev.currentRound.seekingTeams[0];
+      const hidingTeam = prev.currentRound.hidingTeam;
+
+      const existingTimeline = prev.currentRound.timeline || [];
+      const newEvent: TimelineEvent = {
+        id: `tl-${Date.now()}`,
+        timestamp: endTime,
+        type: 'tagged',
+        title: '🏆 HIDER CAUGHT AND TAGGED!',
+        description: `Seekers successfully located and tagged ${hidingTeam?.name || 'Hiders'}! Total hiding time: ${durationStr}.`,
+        badge: 'MATCH COMPLETE',
+        photoUrl: uploadedPhotoUrl,
+      };
+
+      const finishedRound: GameRound = {
+        ...prev.currentRound,
+        endTime,
+        status: 'completed',
+        tagEvent: {
+          taggedAt: endTime,
+          taggedByTeamId: seekingTeam?.id || 'seekers',
+          photoUrl: uploadedPhotoUrl,
+        },
+        timeline: [...existingTimeline, newEvent],
+      };
+
+      const updatedTeams = prev.teams.map(t => {
+        if (t.id === hidingTeam?.id) {
+          return {
+            ...t,
+            hidingTimeSeconds: Math.max(t.hidingTimeSeconds || 0, totalHidingSeconds),
+          };
+        }
+        return t;
+      });
+
+      return {
+        ...prev,
+        currentRound: finishedRound,
+        gameHistory: [...prev.gameHistory, finishedRound],
+        teams: updatedTeams,
+      };
+    });
+  }, [setGameState]);
+
+  const addTimelineEvent = useCallback((event: Omit<TimelineEvent, 'id' | 'timestamp'>) => {
+    setGameState(prev => {
+      if (!prev.currentRound) return prev;
+      const existingTimeline = prev.currentRound.timeline || [];
+      const newEvent: TimelineEvent = {
+        ...event,
+        id: `tl-${Date.now()}`,
+        timestamp: new Date(),
+      };
+      return {
+        ...prev,
+        currentRound: {
+          ...prev.currentRound,
+          timeline: [...existingTimeline, newEvent],
+        },
+      };
+    });
+  }, [setGameState]);
 
   const setAdminPin = useCallback((pin: string) => {
     const newPin = pin.trim() === "" ? undefined : pin.trim();
@@ -837,6 +1261,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     return <div className="flex justify-center items-center min-h-screen text-lg bg-background text-foreground p-4">Loading game state from server... Please wait.</div>;
   }
 
+  const eliminatedStationIds = gameStateRef.current.currentRound?.eliminatedStationIds || [];
+
   return (
     <GameContext.Provider value={{
       ...gameStateRef.current, 
@@ -860,6 +1286,19 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       clearActiveCurse,
       seekerCompletesCurseAction,
       hiderAcknowledgesSeekerPhoto,
+      soundEnabled: gameStateRef.current.soundEnabled ?? true,
+      toggleSound,
+      eliminatedStationIds,
+      toggleEliminateStation,
+      eliminateStationsBulk,
+      resetEliminations,
+      acceptChallengeCard,
+      completeChallengeCard,
+      vetoChallengeCard,
+      lockHiderStation,
+      declareEndgameBreach,
+      tagHider,
+      addTimelineEvent,
       adminPin: gameStateRef.current.adminPin, 
       hiderPin: gameStateRef.current.hiderPin,
       seekerPin: gameStateRef.current.seekerPin,

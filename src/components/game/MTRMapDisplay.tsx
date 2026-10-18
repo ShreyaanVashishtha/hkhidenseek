@@ -8,6 +8,13 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { 
   MTR_LINES, 
   MTR_STATIONS, 
@@ -27,9 +34,14 @@ import {
   Check, 
   X, 
   Eye,
-  Globe
+  Globe,
+  Target,
+  Filter,
+  Flame,
+  Trophy
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useGameContext } from '@/hooks/useGameContext';
 import { MTRGeographicMap } from './MTRGeographicMap';
 
 interface MTRMapDisplayProps {
@@ -51,6 +63,37 @@ export function MTRMapDisplay({
 
   // Mode: Schematic Subway Map vs Geographic Real HK Map
   const [displayMode, setDisplayMode] = useState<'schematic' | 'geographic'>('schematic');
+
+  const { 
+    currentRound, 
+    eliminatedStationIds = [], 
+    toggleEliminateStation, 
+    eliminateStationsBulk, 
+    resetEliminations,
+    lockHiderStation,
+  } = useGameContext();
+
+  const totalStations = Object.keys(MTR_STATIONS).length;
+  const remainingCandidatesCount = Math.max(0, totalStations - eliminatedStationIds.length);
+
+  // Region station helpers for bulk deductions
+  const hkIslandStationIds = useMemo(() => {
+    return Object.values(MTR_STATIONS)
+      .filter(s => ['Central & Western', 'Wan Chai', 'Eastern', 'Southern'].includes(s.district) || s.lines.includes('island') || s.lines.includes('south-island'))
+      .map(s => s.id);
+  }, []);
+
+  const kowloonStationIds = useMemo(() => {
+    return Object.values(MTR_STATIONS)
+      .filter(s => ['Yau Tsim Mong', 'Sham Shui Po', 'Kowloon City', 'Wong Tai Sin', 'Kwun Tong'].includes(s.district))
+      .map(s => s.id);
+  }, []);
+
+  const ntStationIds = useMemo(() => {
+    return Object.values(MTR_STATIONS)
+      .filter(s => ['Kwai Tsing', 'Tsuen Wan', 'Tuen Mun', 'Yuen Long', 'North', 'Tai Po', 'Sha Tin', 'Sai Kung', 'Islands'].includes(s.district))
+      .map(s => s.id);
+  }, []);
 
   const [internalSelectedStationId, setInternalSelectedStationId] = useState<string | null>(null);
   const activeStationId = externalSelectedStationId ?? internalSelectedStationId;
@@ -298,6 +341,40 @@ export function MTRMapDisplay({
                   Interchanges Only
                 </Label>
               </div>
+
+              {/* Deduction Scratchpad Counter & Quick Actions */}
+              {role === 'seeker' && (
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="bg-sky-950/80 text-sky-300 border-sky-500/40 text-xs flex items-center gap-1.5 font-mono h-7 px-2.5">
+                    <Target className="h-3.5 w-3.5 text-sky-400" />
+                    <span>{remainingCandidatesCount} / {totalStations} Candidates</span>
+                  </Badge>
+
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button size="sm" variant="outline" className="h-7 px-2.5 text-xs border-slate-700 bg-slate-900/80 text-slate-300 hover:text-white">
+                        <Filter className="h-3.5 w-3.5 mr-1 text-slate-400" />
+                        Deductions
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent className="bg-[#0b1324] border-slate-700 text-white text-xs z-50">
+                      <DropdownMenuItem onClick={() => eliminateStationsBulk(hkIslandStationIds, 'eliminate')} className="hover:bg-slate-800 cursor-pointer">
+                        Eliminate Hong Kong Island ({hkIslandStationIds.length} stns)
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => eliminateStationsBulk(kowloonStationIds, 'eliminate')} className="hover:bg-slate-800 cursor-pointer">
+                        Eliminate Kowloon ({kowloonStationIds.length} stns)
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => eliminateStationsBulk(ntStationIds, 'eliminate')} className="hover:bg-slate-800 cursor-pointer">
+                        Eliminate New Territories ({ntStationIds.length} stns)
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator className="bg-slate-800" />
+                      <DropdownMenuItem onClick={resetEliminations} className="text-rose-400 hover:bg-rose-950/50 cursor-pointer">
+                        Reset All Eliminations
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              )}
             </div>
           </div>
 
@@ -425,6 +502,7 @@ export function MTRMapDisplay({
             selectedStationId={activeStationId ?? undefined}
             role={role}
             highlightStationIds={highlightStationIds}
+            eliminatedStationIds={eliminatedStationIds}
           />
         ) : (
           <>
@@ -612,9 +690,10 @@ export function MTRMapDisplay({
               const isSelected = activeStationId === st.id;
               const isHighlighted = highlightStationIds.includes(st.id);
               const isLineActive = !activeLineId || st.lines.includes(activeLineId);
+              const isEliminated = eliminatedStationIds.includes(st.id);
               const primaryLine = MTR_LINES[st.lines[0]];
 
-              const opacity = isLineActive ? 1 : 0.12;
+              const opacity = isEliminated ? 0.22 : (isLineActive ? 1 : 0.12);
 
               return (
                 <g
@@ -650,7 +729,7 @@ export function MTRMapDisplay({
                       cx={st.x}
                       cy={st.y}
                       r={isSelected ? "9.5" : "8"}
-                      fill="#ffffff"
+                      fill={isEliminated ? "#334155" : "#ffffff"}
                       stroke="#0f172a"
                       strokeWidth="3.5"
                       filter={isSelected ? "url(#activeGlow)" : undefined}
@@ -662,11 +741,19 @@ export function MTRMapDisplay({
                       cx={st.x}
                       cy={st.y}
                       r={isSelected ? "7" : "5"}
-                      fill="#ffffff"
-                      stroke={primaryLine?.color || "#ffffff"}
+                      fill={isEliminated ? "#334155" : "#ffffff"}
+                      stroke={isEliminated ? "#64748b" : (primaryLine?.color || "#ffffff")}
                       strokeWidth="2.5"
                       className="transition-transform duration-200 group-hover:scale-125"
                     />
+                  )}
+
+                  {/* Elimination Red Cross Indicator */}
+                  {isEliminated && (
+                    <g stroke="#ef4444" strokeWidth="2.5" opacity="0.9">
+                      <line x1={st.x - 5} y1={st.y - 5} x2={st.x + 5} y2={st.y + 5} />
+                      <line x1={st.x - 5} y1={st.y + 5} x2={st.x + 5} y2={st.y - 5} />
+                    </g>
                   )}
                 </g>
               );
@@ -679,13 +766,14 @@ export function MTRMapDisplay({
               const isSelected = activeStationId === st.id;
               const isHighlighted = highlightStationIds.includes(st.id);
               const isLineActive = !activeLineId || st.lines.includes(activeLineId);
+              const isEliminated = eliminatedStationIds.includes(st.id);
 
               // If user toggles "Interchanges Only", hide regular station labels unless selected
               if (onlyInterchanges && !st.isInterchange && !isSelected && !isHighlighted) {
                 return null;
               }
 
-              const opacity = isLineActive ? 1 : 0.12;
+              const opacity = isEliminated ? 0.25 : (isLineActive ? 1 : 0.12);
               const labelProps = getLabelProps(st);
 
               return (
@@ -698,13 +786,14 @@ export function MTRMapDisplay({
                 >
                   <text
                     textAnchor={labelProps.textAnchor}
-                    fill={isSelected ? "#38bdf8" : isHighlighted ? "#f59e0b" : "#f8fafc"}
+                    fill={isEliminated ? "#64748b" : (isSelected ? "#38bdf8" : isHighlighted ? "#f59e0b" : "#f8fafc")}
                     fontSize={isSelected ? "12" : st.isInterchange ? "11" : "10"}
                     fontWeight={isSelected || st.isInterchange ? "700" : "500"}
                     stroke="#070b14"
                     strokeWidth="3.5"
                     paintOrder="stroke"
                     strokeLinejoin="round"
+                    textDecoration={isEliminated ? "line-through" : undefined}
                   >
                     {st.name}
                     {showChineseLabels && (
@@ -777,18 +866,19 @@ export function MTRMapDisplay({
             </div>
 
             {/* Action buttons based on Role */}
-            <div className="flex items-center gap-2 pt-1 border-t border-slate-800">
+            <div className="flex flex-col gap-2 pt-2 border-t border-slate-800">
               {role === 'hider' && (
                 <Button
                   size="sm"
                   onClick={() => {
                     onSelectStation?.(selectedStation);
+                    lockHiderStation(selectedStation.id);
                     toast({
-                      title: "Hiding Zone Selected!",
-                      description: `Your 500m hiding territory is anchored at ${selectedStation.name} (${selectedStation.nameZh}).`,
+                      title: "Hiding Zone Locked In! 🛡️",
+                      description: `Your 500m territory is anchored at ${selectedStation.name} (${selectedStation.nameZh}). Seekers cannot see your location!`,
                     });
                   }}
-                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs h-8 flex items-center justify-center gap-1.5"
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs h-8 flex items-center justify-center gap-1.5 shadow-md"
                 >
                   <Shield className="h-3.5 w-3.5" />
                   Lock In As My Hiding Zone
@@ -796,21 +886,46 @@ export function MTRMapDisplay({
               )}
 
               {role === 'seeker' && (
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    onSelectStation?.(selectedStation);
-                    navigator.clipboard.writeText(`${selectedStation.name} Station`);
-                    toast({
-                      title: "Targeted for Radar Clue!",
-                      description: `Added "${selectedStation.name} (${selectedStation.nameZh})" to your question prompt.`,
-                    });
-                  }}
-                  className="w-full bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs h-8 flex items-center justify-center gap-1.5"
-                >
-                  <Compass className="h-3.5 w-3.5" />
-                  Target in Radar Question
-                </Button>
+                <div className="flex flex-col gap-1.5 w-full">
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      onSelectStation?.(selectedStation);
+                      navigator.clipboard.writeText(`${selectedStation.name} Station`);
+                      toast({
+                        title: "Targeted for Radar Clue!",
+                        description: `Added "${selectedStation.name} (${selectedStation.nameZh})" to your question prompt.`,
+                      });
+                    }}
+                    className="w-full bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs h-8 flex items-center justify-center gap-1.5"
+                  >
+                    <Compass className="h-3.5 w-3.5" />
+                    Target in Radar Question
+                  </Button>
+
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => toggleEliminateStation(selectedStation.id)}
+                    className={`w-full text-xs h-7 flex items-center justify-center gap-1.5 transition-all ${
+                      eliminatedStationIds.includes(selectedStation.id)
+                        ? 'border-emerald-600/60 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/50'
+                        : 'border-rose-600/60 bg-rose-950/40 text-rose-300 hover:bg-rose-900/50'
+                    }`}
+                  >
+                    {eliminatedStationIds.includes(selectedStation.id) ? (
+                      <>
+                        <Check className="h-3.5 w-3.5 text-emerald-400" />
+                        Restore As Hiding Candidate
+                      </>
+                    ) : (
+                      <>
+                        <X className="h-3.5 w-3.5 text-rose-400" />
+                        Eliminate From Candidates
+                      </>
+                    )}
+                  </Button>
+                </div>
               )}
 
               {role === 'spectator' && (

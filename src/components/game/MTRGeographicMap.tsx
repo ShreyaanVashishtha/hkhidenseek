@@ -14,6 +14,7 @@ interface MTRGeographicMapProps {
   selectedStationId?: string;
   role?: 'hider' | 'seeker' | 'admin' | 'spectator';
   highlightStationIds?: string[];
+  eliminatedStationIds?: string[];
 }
 
 export function MTRGeographicMap({
@@ -21,6 +22,7 @@ export function MTRGeographicMap({
   selectedStationId,
   role = 'spectator',
   highlightStationIds = [],
+  eliminatedStationIds = [],
 }: MTRGeographicMapProps) {
   const { toast } = useToast();
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
@@ -175,6 +177,16 @@ export function MTRGeographicMap({
 
     Object.entries(circlesRef.current).forEach(([id, circle]) => {
       const isSelected = selectedStationId === id;
+      const isEliminated = eliminatedStationIds.includes(id);
+
+      if (isEliminated) {
+        circle.setStyle({
+          opacity: 0,
+          fillOpacity: 0,
+        });
+        return;
+      }
+
       circle.setStyle({
         color: isSelected ? '#38bdf8' : '#64748b',
         weight: isSelected ? 2.5 : 1,
@@ -188,11 +200,23 @@ export function MTRGeographicMap({
       }
     });
 
+    Object.entries(markersRef.current).forEach(([id, marker]) => {
+      const isEliminated = eliminatedStationIds.includes(id);
+      if (isEliminated) {
+        marker.setStyle({
+          fillColor: '#334155',
+          color: '#64748b',
+          fillOpacity: 0.25,
+          opacity: 0.35,
+        });
+      }
+    });
+
     // Pan map to selected station
     if (selectedStation && mapInstanceRef.current) {
       mapInstanceRef.current.flyTo([selectedStation.lat, selectedStation.lng], 14, { duration: 1.2 });
     }
-  }, [selectedStationId, selectedStation]);
+  }, [selectedStationId, selectedStation, eliminatedStationIds]);
 
   // Handle Live GPS Tracking
   const toggleGPS = () => {

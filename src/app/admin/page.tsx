@@ -10,12 +10,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useGameContext } from "@/hooks/useGameContext";
 import type { Player, Team } from "@/lib/types";
 import { PageHeader } from "@/components/PageHeader";
-import { ShieldCheck, Users, UserPlus, Play, StopCircle, Shuffle, Trash2, Map, Forward, ZapOff, KeyRound, LogOut } from "lucide-react";
+import { ShieldCheck, Users, UserPlus, Play, StopCircle, Shuffle, Trash2, Map, Forward, ZapOff, KeyRound, LogOut, Siren, Eye, Radio } from "lucide-react";
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { CURSE_DICE_OPTIONS } from '@/lib/constants';
 import { PinProtectPage } from '@/components/auth/PinProtectPage';
+import { MTR_STATIONS } from '@/lib/mtrData';
+import { MatchTimeline } from '@/components/game/MatchTimeline';
+import { Badge } from '@/components/ui/badge';
 
 function AdminPageContent() {
   const { 
@@ -35,7 +38,9 @@ function AdminPageContent() {
     clearActiveCurse,
     adminPin, hiderPin, seekerPin,
     setAdminPin, setHiderPin, setSeekerPin,
-    logoutAdmin, logoutHider, logoutSeeker
+    logoutAdmin, logoutHider, logoutSeeker,
+    declareEndgameBreach,
+    eliminatedStationIds
   } = useGameContext();
   const { toast } = useToast();
 
@@ -386,6 +391,82 @@ function AdminPageContent() {
           </Button>
         </CardContent>
       </Card>
+
+      {/* Jet Lag God-Mode Referee Card */}
+      {currentRound && (
+        <Card className="border-amber-500/40 bg-amber-500/5 shadow-md">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
+                <Eye className="h-5 w-5" /> Referee God-Mode (Round {currentRound.roundNumber})
+              </CardTitle>
+              <Badge variant={currentRound.isEndgameBreached ? "destructive" : "outline"}>
+                {currentRound.isEndgameBreached ? "🚨 500m Breach Siren Active" : "🛡️ Stealth Zone Secure"}
+              </Badge>
+            </div>
+            <CardDescription>
+              Real-time referee oversight of the hidden player, seeker fog of war, and endgame trigger.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="p-3 bg-background rounded-md border">
+                <p className="text-xs text-muted-foreground font-medium">Hider Locked Zone</p>
+                {currentRound.lockedHiderStationId && MTR_STATIONS[currentRound.lockedHiderStationId] ? (
+                  <p className="font-bold text-base text-primary">
+                    {MTR_STATIONS[currentRound.lockedHiderStationId].name} ({MTR_STATIONS[currentRound.lockedHiderStationId].nameZh})
+                    <span className="block text-xs font-normal text-muted-foreground">
+                      District: {MTR_STATIONS[currentRound.lockedHiderStationId].district} (Lat: {MTR_STATIONS[currentRound.lockedHiderStationId].lat.toFixed(4)}, Lng: {MTR_STATIONS[currentRound.lockedHiderStationId].lng.toFixed(4)})
+                    </span>
+                  </p>
+                ) : (
+                  <p className="text-sm font-semibold text-amber-600 italic">Hider has not locked a station yet</p>
+                )}
+              </div>
+              <div className="p-3 bg-background rounded-md border">
+                <p className="text-xs text-muted-foreground font-medium">Seeker Elimination Fog-of-War</p>
+                <p className="font-bold text-base text-primary">
+                  {eliminatedStationIds.length} / 70 Stations Eliminated
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {70 - eliminatedStationIds.length} candidate stations remaining on seekers' map
+                </p>
+              </div>
+              <div className="p-3 bg-background rounded-md border">
+                <p className="text-xs text-muted-foreground font-medium">Active Challenge & Curse</p>
+                <p className="text-sm font-semibold text-foreground">
+                  {currentRound.activeChallenge ? currentRound.activeChallenge.card.title : "No challenge in progress"}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Curse: {currentRound.activeCurse ? (activeCurseDetails?.name || "Active") : "None"}
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-2 flex flex-wrap gap-3">
+              <Button
+                variant={currentRound.isEndgameBreached ? "secondary" : "destructive"}
+                onClick={() => {
+                  declareEndgameBreach();
+                  toast({
+                    title: currentRound.isEndgameBreached ? "Endgame Breach Already Active" : "Endgame Breach Siren Triggered!",
+                    description: "Seekers and hider notified of 500m proximity breach."
+                  });
+                }}
+                className="flex items-center gap-2"
+              >
+                <Siren className="h-4 w-4" />
+                {currentRound.isEndgameBreached ? "🚨 500m Breach Siren is Triggered" : "🚨 Referee Manual 500m Breach Trigger"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Live Match Timeline */}
+      {currentRound && (
+        <MatchTimeline events={currentRound.timeline} />
+      )}
     </div>
   );
 }

@@ -15,8 +15,11 @@ import { CURSE_DICE_COST, CURSE_DICE_OPTIONS, MAX_CURSES_PER_ROUND, HIDING_PHASE
 import { PageHeader } from "@/components/PageHeader";
 import { TimerDisplay } from "@/components/game/TimerDisplay";
 import { MTRMapDisplay } from "@/components/game/MTRMapDisplay";
+import { EndgameBreachModal } from "@/components/game/EndgameBreachModal";
+import { MatchTimeline } from "@/components/game/MatchTimeline";
+import { MTR_STATIONS, calculateHaversineDistanceKm } from "@/lib/mtrData";
 import { useToast } from '@/hooks/use-toast';
-import { Eye, ShieldQuestion, Upload, Send, Dice5, Zap, Coins, HelpCircle, CheckCircle, Image as ImageIcon, Loader2 } from "lucide-react";
+import { Eye, ShieldQuestion, Upload, Send, Dice5, Zap, Coins, HelpCircle, CheckCircle, Image as ImageIcon, Loader2, Thermometer as ThermometerIcon, AlertTriangle } from "lucide-react";
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { PinProtectPage } from '@/components/auth/PinProtectPage';
@@ -128,12 +131,16 @@ function HiderPageContent() {
       }
       finalResponse = yesNoResponse.charAt(0).toUpperCase() + yesNoResponse.slice(1);
     } else if (selectedQuestionToAnswer.category === "Photo") {
+      if (currentRound?.isEndgameBreached) {
+        toast({ title: "Endgame Breach Active", description: "Photo clues are disabled during an endgame breach.", variant: "destructive" });
+        return;
+      }
       if (!responsePhoto) {
         toast({ title: "Error", description: "Please upload a photo.", variant: "destructive" });
         return;
       }
       finalResponse = responsePhoto;
-    } else { // Relative
+    } else { // Relative, Thermometer
       if (!responseText.trim()) {
         toast({ title: "Error", description: "Please enter your response.", variant: "destructive" });
         return;
@@ -304,6 +311,11 @@ function HiderPageContent() {
         description={isHidingPhase ? "Choose your hiding spot! The seekers are waiting." : "Evade the seekers! Answer their questions carefully."}
         icon={Eye}
       />
+
+      <EndgameBreachModal
+        isBreached={Boolean(currentRound?.isEndgameBreached)}
+        role="hider"
+      />
        <Card>
             <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-xl">
@@ -391,24 +403,108 @@ function HiderPageContent() {
                   </div>
                 )}
                 {selectedQuestionToAnswer.category === "Photo" && (
-                  <div className="space-y-2">
-                    <Label htmlFor="photo-upload">Upload Photo (no direct clues):</Label>
-                    <Input
-                      id="photo-upload"
-                      type="file"
-                      accept="image/*"
-                      onChange={handlePhotoInputChange}
-                      className="file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/20 file:text-primary hover:file:bg-primary/30"
-                    />
-                    {responsePhotoPreview && (
-                        <div className="mt-2">
-                            <p className="text-xs text-muted-foreground mb-1">Preview:</p>
-                            <Image src={responsePhotoPreview} alt="Response photo preview" width={200} height={150} className="rounded-md border object-contain" data-ai-hint="preview image" />
-                        </div>
-                    )}
-                    {responsePhoto && !responsePhotoPreview && <p className="text-xs text-muted-foreground">Selected: {responsePhoto.name}</p>}
-                  </div>
+                  currentRound?.isEndgameBreached ? (
+                    <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-md text-red-600 dark:text-red-400 text-sm flex items-center gap-2">
+                      <AlertTriangle className="h-5 w-5 shrink-0" />
+                      <span><strong>Endgame Breach Active:</strong> Seekers have breached your 500m zone! Photo clues are disabled.</span>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <Label htmlFor="photo-upload">Upload Photo (no direct clues):</Label>
+                      <Input
+                        id="photo-upload"
+                        type="file"
+                        accept="image/*"
+                        onChange={handlePhotoInputChange}
+                        className="file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/20 file:text-primary hover:file:bg-primary/30"
+                      />
+                      {responsePhotoPreview && (
+                          <div className="mt-2">
+                              <p className="text-xs text-muted-foreground mb-1">Preview:</p>
+                              <Image src={responsePhotoPreview} alt="Response photo preview" width={200} height={150} className="rounded-md border object-contain" data-ai-hint="preview image" />
+                          </div>
+                      )}
+                      {responsePhoto && !responsePhotoPreview && <p className="text-xs text-muted-foreground">Selected: {responsePhoto.name}</p>}
+                    </div>
+                  )
                 )}
+
+                {selectedQuestionToAnswer.category === "Thermometer" && (() => {
+                  const stA = selectedQuestionToAnswer.stationAId ? MTR_STATIONS[selectedQuestionToAnswer.stationAId] : null;
+                  const stB = selectedQuestionToAnswer.stationBId ? MTR_STATIONS[selectedQuestionToAnswer.stationBId] : null;
+                  const hiderStation = currentRound?.lockedHiderStationId ? MTR_STATIONS[currentRound.lockedHiderStationId] : null;
+
+                  let distA: number | null = null;
+                  let distB: number | null = null;
+                  let closer: string | null = null;
+                  let diffKm: string | null = null;
+
+                  if (stA && stB && hiderStation) {
+                    distA = calculateHaversineDistanceKm(hiderStation.lat, hiderStation.lng, stA.lat, stA.lng);
+                    distB = calculateHaversineDistanceKm(hiderStation.lat, hiderStation.lng, stB.lat, stB.lng);
+                    closer = distA < distB ? stA.name : stB.name;
+                    diffKm = Math.abs(distA - distB).toFixed(2);
+                  }
+
+                  return (
+                    <div className="space-y-3">
+                      {hiderStation && stA && stB && distA !== null && distB !== null ? (
+                        <div className="p-3 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-md text-sm space-y-2">
+                          <div className="flex items-center gap-2 font-semibold text-blue-700 dark:text-blue-300">
+                            <ThermometerIcon className="h-4 w-4" />
+                            <span>Automated Distance Calculation</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            Locked Spot: <strong>{hiderStation.name} ({hiderStation.nameZh})</strong>
+                          </p>
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div className="p-2 bg-background/80 rounded border">
+                              <span className="font-medium">{stA.name}</span>: {distA.toFixed(2)} km
+                            </div>
+                            <div className="p-2 bg-background/80 rounded border">
+                              <span className="font-medium">{stB.name}</span>: {distB.toFixed(2)} km
+                            </div>
+                          </div>
+                          <p className="text-xs font-semibold text-blue-800 dark:text-blue-200">
+                            👉 You are closer to <strong>{closer}</strong> by {diffKm} km!
+                          </p>
+                          <div className="flex flex-wrap gap-2 pt-1">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setResponseText(`Closer to ${stA.name} (${distA!.toFixed(2)}km vs ${distB!.toFixed(2)}km)`)}
+                            >
+                              Select: Closer to {stA.name}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setResponseText(`Closer to ${stB.name} (${distB!.toFixed(2)}km vs ${distA!.toFixed(2)}km)`)}
+                            >
+                              Select: Closer to {stB.name}
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-md text-xs text-amber-700 dark:text-amber-300">
+                          💡 <em>Tip: Lock your hiding station on the MTR map above to calculate automated exact distances between stations!</em>
+                        </div>
+                      )}
+                      <div className="space-y-1">
+                        <Label htmlFor="thermometer-response">Your Response:</Label>
+                        <Input
+                          id="thermometer-response"
+                          value={responseText}
+                          onChange={(e) => setResponseText(e.target.value)}
+                          placeholder="e.g. Closer to Admiralty"
+                        />
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {selectedQuestionToAnswer.category === "Relative" && (
                    <div className="space-y-2">
                      <Label htmlFor="text-response">Your Detailed Response:</Label>
@@ -422,7 +518,13 @@ function HiderPageContent() {
                 )}
               </CardContent>
               <CardFooter>
-                <Button onClick={handleSendResponse} className="flex items-center gap-2"><Send /> Send Response</Button>
+                <Button
+                  onClick={handleSendResponse}
+                  disabled={selectedQuestionToAnswer.category === "Photo" && Boolean(currentRound?.isEndgameBreached)}
+                  className="flex items-center gap-2"
+                >
+                  <Send /> Send Response
+                </Button>
               </CardFooter>
             </Card>
           )}
@@ -527,6 +629,10 @@ function HiderPageContent() {
             )}
           </Card>
         </>
+      )}
+
+      {currentRound && (
+        <MatchTimeline events={currentRound.timeline} />
       )}
     </div>
   );

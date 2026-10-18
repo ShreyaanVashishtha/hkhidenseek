@@ -4,7 +4,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { Home, ShieldCheck, Search, Eye, ScrollText, Trophy, Menu } from "lucide-react";
+import { Home, ShieldCheck, Search, Eye, ScrollText, Trophy, Menu, Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -24,15 +24,27 @@ const navItems = [
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const { isMobile } = useGameContext();
+  const { isMobile, soundEnabled, toggleSound } = useGameContext();
 
 
   const sidebarContent = (
     <ScrollArea className="h-full py-4 px-2">
       <div className="px-3 py-2">
-        <h2 className="mb-2 px-4 text-lg font-semibold tracking-tight text-primary">
-          {GAME_TITLE}
-        </h2>
+        <div className="flex items-center justify-between px-2 mb-2">
+          <h2 className="text-lg font-semibold tracking-tight text-primary">
+            {GAME_TITLE}
+          </h2>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+            onClick={toggleSound}
+            title={soundEnabled ? "Sound Effects ON (Click to Mute)" : "Sound Effects OFF (Click to Enable)"}
+          >
+            {soundEnabled ? <Volume2 className="h-4 w-4 text-emerald-500" /> : <VolumeX className="h-4 w-4 text-muted-foreground" />}
+            <span className="sr-only">Toggle Sound</span>
+          </Button>
+        </div>
         <Separator className="my-4 bg-sidebar-border" />
         <div className="space-y-1">
           {navItems.map((item) => (
@@ -65,17 +77,29 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Link href="/" className="text-lg font-bold text-primary">
             {GAME_TITLE}
           </Link>
-          <Sheet>
-            <SheetTrigger asChild>
-              <Button variant="outline" size="icon">
-                <Menu className="h-6 w-6" />
-                <span className="sr-only">Open navigation</span>
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="left" className="w-[280px] p-0 bg-sidebar text-sidebar-foreground border-sidebar-border">
-              {sidebarContent}
-            </SheetContent>
-          </Sheet>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9"
+              onClick={toggleSound}
+              title={soundEnabled ? "Sound ON" : "Sound OFF"}
+            >
+              {soundEnabled ? <Volume2 className="h-5 w-5 text-emerald-500" /> : <VolumeX className="h-5 w-5 text-muted-foreground" />}
+              <span className="sr-only">Toggle Sound</span>
+            </Button>
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button variant="outline" size="icon">
+                  <Menu className="h-6 w-6" />
+                  <span className="sr-only">Open navigation</span>
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="left" className="w-[280px] p-0 bg-sidebar text-sidebar-foreground border-sidebar-border">
+                {sidebarContent}
+              </SheetContent>
+            </Sheet>
+          </div>
         </header>
         <main className="flex-1 p-4 sm:p-6">{children}</main>
       </div>

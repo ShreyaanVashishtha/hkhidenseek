@@ -4,9 +4,12 @@
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ShieldCheck, Search, Eye, Users, ScrollText, Trophy } from 'lucide-react';
+import { ShieldCheck, Search, Eye, Users, ScrollText, Trophy, Radio } from 'lucide-react';
 import { GAME_TITLE } from '@/lib/constants';
 import { PageHeader } from '@/components/PageHeader';
+import { useGameContext } from '@/hooks/useGameContext';
+import { MatchTimeline } from '@/components/game/MatchTimeline';
+import { Badge } from '@/components/ui/badge';
 
 const roleCards = [
   { title: 'Admin Panel', description: 'Manage players, teams, and game rounds.', href: '/admin', icon: ShieldCheck, cta: 'Go to Admin' },
@@ -20,6 +23,7 @@ const infoCards = [
 ];
 
 export default function HomePage() {
+  const { currentRound, eliminatedStationIds } = useGameContext();
   return (
     <div className="container mx-auto py-8">
       <PageHeader
@@ -27,6 +31,47 @@ export default function HomePage() {
         description="Embark on an epic game of hide and seek in a bustling city environment." // Updated description
         icon={Users}
       />
+
+      {currentRound && (currentRound.status === 'hiding-phase' || currentRound.status === 'seeking-phase') && (
+        <Card className="mb-10 border-primary/40 bg-gradient-to-r from-primary/5 via-card to-accent/5 shadow-md">
+          <CardHeader className="pb-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="relative flex h-3 w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                </span>
+                <CardTitle className="text-lg font-bold flex items-center gap-2">
+                  <Radio className="h-5 w-5 text-emerald-500" />
+                  Round {currentRound.roundNumber} is Live!
+                </CardTitle>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge variant={currentRound.status === 'seeking-phase' ? "default" : "secondary"}>
+                  {currentRound.status === 'seeking-phase' ? '🎯 Seeking Phase' : '⏱️ Hiding Phase'}
+                </Badge>
+                {currentRound.isEndgameBreached && (
+                  <Badge variant="destructive" className="animate-pulse">
+                    🚨 500m Breach Siren Active
+                  </Badge>
+                )}
+              </div>
+            </div>
+            <CardDescription>
+              Hiding Team: <strong>{currentRound.hidingTeam?.name || 'Hiders'}</strong> | Remaining Candidate Stations: <strong>{70 - (eliminatedStationIds?.length || 0)}/70</strong>
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <MatchTimeline events={currentRound.timeline} />
+          </CardContent>
+        </Card>
+      )}
+
+      {currentRound && currentRound.status === 'completed' && currentRound.timeline && currentRound.timeline.length > 0 && (
+        <div className="mb-10">
+          <MatchTimeline events={currentRound.timeline} />
+        </div>
+      )}
 
       <section className="mb-12">
         <h2 className="text-2xl font-semibold mb-6 text-primary">Choose Your Role</h2>
