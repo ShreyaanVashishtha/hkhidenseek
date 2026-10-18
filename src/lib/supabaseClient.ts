@@ -1,7 +1,11 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
-const rawKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
+const rawUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL)?.trim();
+const rawKey = (
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 
+  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || 
+  process.env.SUPABASE_ANON_KEY
+)?.trim();
 
 export const isSupabaseConfigured = Boolean(
   rawUrl &&
@@ -18,7 +22,7 @@ const fallbackKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.placeholder-anon-k
 
 if (!isSupabaseConfigured) {
   console.warn(
-    '[MTR HIDE & SEEK] Supabase credentials not found or placeholder used. App is running in local fallback mode. Realtime multi-device sync is disabled until NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are provided in .env.local.'
+    '[MTR HIDE & SEEK] Supabase credentials not detected. Running in local-first mode. Multi-device cloud sync will activate once Supabase is connected in Vercel or .env.local.'
   );
 }
 
