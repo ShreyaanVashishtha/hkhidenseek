@@ -195,22 +195,17 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   }, [gameStateInternal]);
 
   const setGameState = useCallback(async (updater: GameState | ((prevState: GameState) => GameState)) => {
-    let finalNewState: GameState | null = null;
+    const nextState: GameState = typeof updater === 'function' ? updater(gameStateRef.current) : updater;
+    gameStateRef.current = nextState;
+    setGameStateInternal(nextState);
+    console.log('[SET_GAME_STATE] Local state updated. Sending to Supabase. Admin PIN:', nextState.adminPin);
 
-    setGameStateInternal(currentInternalState => {
-      const newState = typeof updater === 'function' ? updater(gameStateRef.current) : updater; // Use gameStateRef.current
-      gameStateRef.current = newState; 
-      finalNewState = newState;
-      console.log('[SET_GAME_STATE] Local state updated. Sending to Supabase. Admin PIN:', finalNewState?.adminPin);
-      return newState; 
-    });
-
-    if (finalNewState) {
-      const serializedData = serializeStateForSupabase(finalNewState);
-      if (finalNewState.currentRound?.askedQuestions) {
-         console.log('[SYNC_UP] About to send to Supabase. Asked questions responses:', finalNewState.currentRound.askedQuestions.map(q => ({id: q.id, response: q.response ? String(q.response).substring(0,70)+'...' : undefined })));
+    if (nextState) {
+      const serializedData = serializeStateForSupabase(nextState);
+      if (nextState.currentRound?.askedQuestions) {
+         console.log('[SYNC_UP] About to send to Supabase. Asked questions responses:', nextState.currentRound.askedQuestions.map((q: any) => ({id: q.id, response: q.response ? String(q.response).substring(0,70)+'...' : undefined })));
       }
-      console.log('[SYNC_UP] Attempting to update Supabase with state. Admin PIN:', finalNewState.adminPin);
+      console.log('[SYNC_UP] Attempting to update Supabase with state. Admin PIN:', nextState.adminPin);
       
       const { error } = await supabase
         .from('game_sessions')

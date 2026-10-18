@@ -326,7 +326,7 @@ function HiderPageContent() {
             if(currentRound?.status === 'hiding-phase') startSeekingPhase();
           } : undefined}
         />
-        <MTRMapDisplay />
+        <MTRMapDisplay role="hider" />
       </div>
 
       {isHidingPhase && (

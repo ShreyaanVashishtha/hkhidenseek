@@ -19,6 +19,8 @@ import { useToast } from '@/hooks/use-toast';
 import { Search, ShieldQuestion, Send, ThumbsUp, ThumbsDown, ListChecks, Zap, Upload, CheckSquare, AlertTriangle, Dice6 } from "lucide-react";
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { PinProtectPage } from '@/components/auth/PinProtectPage';
+import { MTRMapDisplay } from "@/components/game/MTRMapDisplay";
+import type { MTRStation } from "@/lib/mtrData";
 
 interface PhotoResponseDisplayProps {
   imageUrl: string; 
@@ -280,6 +282,18 @@ function SeekerPageContent() {
             className="lg:col-span-1"
           />
         )}
+      </div>
+
+      {/* Interactive Hong Kong MTR Transit Radar Map */}
+      <div className="w-full">
+        <MTRMapDisplay 
+          role="seeker"
+          onSelectStation={(station: MTRStation) => {
+            setQuestionText((prev: string) => 
+              prev ? `${prev}, ${station.name} (${station.nameZh})` : `${station.name} (${station.nameZh})`
+            );
+          }}
+        />
       </div>
       
       {isHidingPhase && (
