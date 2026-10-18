@@ -5,7 +5,7 @@ import type { GameState, Player, Team, GameRound, AskedQuestion, ActiveCurseInfo
 import { MTR_MAP_PLACEHOLDER_URL, INITIAL_COINS_HIDER_START, QUESTION_OPTIONS, CURSE_DICE_OPTIONS, MAX_CURSES_PER_ROUND, GAME_TITLE, CHALLENGE_PENALTY_MINUTES, HIDING_PHASE_DURATION_MINUTES, SEEKING_PHASE_DURATION_MINUTES, CURSE_DICE_COST } from '@/lib/constants';
 import React, { createContext, useState, useCallback, ReactNode, useEffect, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase, isSupabaseConfigured } from '@/lib/supabaseClient';
 
 const GAME_SESSION_ID = 'current_active_game';
 const LOCAL_STORAGE_AUTH_PREFIX = `${GAME_TITLE.replace(/\s+/g, '_')}_auth_status_`;
@@ -94,49 +94,55 @@ const serializeStateForSupabase = (state: GameState): any => {
   return stateCopy;
 };
 
+const readFileAsDataUrl = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+};
+
 const uploadPhotoToSupabaseStorage = async (file: File, pathPrefix: string): Promise<string | null> => {
-  if (!(file instanceof File)) {
-    console.error("[UPLOAD_PHOTO] Invalid file object provided:", file);
+  if (!(file instanceof File) || file.size === 0) {
+    console.error("[UPLOAD_PHOTO] Invalid or empty file object provided:", file);
     return null;
   }
-  if (file.size === 0) {
-    console.error("[UPLOAD_PHOTO] File is empty (0 bytes). Cannot upload.");
-    return null;
+
+  // If Supabase credentials are not set, immediately use base64 Data URL for local/offline support
+  if (!isSupabaseConfigured) {
+    try {
+      console.log('[UPLOAD_PHOTO] Supabase not configured. Using local Data URL.');
+      return await readFileAsDataUrl(file);
+    } catch (e) {
+      console.error('[UPLOAD_PHOTO] Failed to generate local Data URL:', e);
+      return null;
+    }
   }
 
   try {
     const filePath = `${pathPrefix}/${Date.now()}-${file.name.replace(/\s+/g, '_')}`;
-    console.log('[UPLOAD_PHOTO] Attempting to upload file:', {name: file.name, size: file.size, type: file.type}, 'to Supabase Storage path:', filePath);
-
     const { data, error } = await supabase.storage
       .from('game-assets')
       .upload(filePath, file, {
         cacheControl: '3600',
-        upsert: false, // Use false to avoid accidental overwrites if IDs are reused quickly, though unlikely with Date.now()
+        upsert: false,
       });
 
-    if (error) {
-      console.error("[UPLOAD_PHOTO] Supabase Storage UPLOAD FAILED. Error object from SDK:", error);
-      return null;
+    if (error || !data?.path) {
+      console.warn("[UPLOAD_PHOTO] Supabase Storage upload failed, falling back to local Data URL:", error);
+      return await readFileAsDataUrl(file);
     }
-    if (!data || !data.path) { 
-      console.error("[UPLOAD_PHOTO] Supabase Storage upload returned no data object or no path in data object. Data:", data);
-      return null;
-    }
-    console.log('[UPLOAD_PHOTO] Supabase Storage upload successful, data.path:', data.path);
 
     const { data: urlData } = supabase.storage.from('game-assets').getPublicUrl(data.path);
-
     if (!urlData || !urlData.publicUrl) {
-      console.error("[UPLOAD_PHOTO] FAILED to get public URL. urlData object:", urlData);
-      return null;
+      return await readFileAsDataUrl(file);
     }
-    console.log('[UPLOAD_PHOTO] Successfully retrieved public URL:', urlData.publicUrl);
-    return urlData.publicUrl;
 
+    return urlData.publicUrl;
   } catch (e) {
-    console.error("[UPLOAD_PHOTO] CRITICAL EXCEPTION during photo upload process:", e);
-    return null;
+    console.warn("[UPLOAD_PHOTO] Exception during upload, falling back to local Data URL:", e);
+    return await readFileAsDataUrl(file);
   }
 };
 
@@ -200,29 +206,67 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     setGameStateInternal(nextState);
     console.log('[SET_GAME_STATE] Local state updated. Sending to Supabase. Admin PIN:', nextState.adminPin);
 
-    if (nextState) {
-      const serializedData = serializeStateForSupabase(nextState);
-      if (nextState.currentRound?.askedQuestions) {
-         console.log('[SYNC_UP] About to send to Supabase. Asked questions responses:', nextState.currentRound.askedQuestions.map((q: any) => ({id: q.id, response: q.response ? String(q.response).substring(0,70)+'...' : undefined })));
+    // Save to localStorage for instant local/offline persistence
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('mtr_hide_and_seek_game_data', JSON.stringify(nextState));
+      } catch (err) {
+        console.warn('[LOCAL_STORAGE] Failed to persist state locally:', err);
       }
-      console.log('[SYNC_UP] Attempting to update Supabase with state. Admin PIN:', nextState.adminPin);
-      
-      const { error } = await supabase
-        .from('game_sessions')
-        .update({ game_data: serializedData, updated_at: new Date().toISOString() })
-        .eq('id', GAME_SESSION_ID);
+    }
 
-      if (error) {
-        console.error("[SYNC_UP] Error updating game state in Supabase:", error);
-        toast({ title: "Sync Error", description: `Failed to save game state: ${error.message}`, variant: "destructive" });
-      } else {
-        // console.log("[SYNC_UP] Supabase update successful.");
+    if (isSupabaseConfigured && nextState) {
+      try {
+        const serializedData = serializeStateForSupabase(nextState);
+        if (nextState.currentRound?.askedQuestions) {
+          console.log('[SYNC_UP] Sending to Supabase. Asked questions count:', nextState.currentRound.askedQuestions.length);
+        }
+        
+        const { error } = await supabase
+          .from('game_sessions')
+          .update({ game_data: serializedData, updated_at: new Date().toISOString() })
+          .eq('id', GAME_SESSION_ID);
+
+        if (error) {
+          console.warn("[SYNC_UP] Supabase sync issue:", error.message);
+        }
+      } catch (err) {
+        console.warn("[SYNC_UP] Exception during Supabase update (offline or unreachable):", err);
       }
     }
   }, [toast]); 
 
   useEffect(() => {
+    const LOCAL_GAME_KEY = 'mtr_hide_and_seek_game_data';
+
+    const loadLocalFallback = () => {
+      if (typeof window !== 'undefined') {
+        const localData = localStorage.getItem(LOCAL_GAME_KEY);
+        if (localData) {
+          try {
+            const parsed = JSON.parse(localData);
+            const deserialized = deserializeState(parsed);
+            setGameStateInternal(deserialized);
+            gameStateRef.current = deserialized;
+            console.log('[INIT] Loaded existing state from localStorage.');
+            return;
+          } catch (e) {
+            console.warn('[INIT] Error parsing local game data:', e);
+          }
+        }
+      }
+      setGameStateInternal(defaultGameState);
+      gameStateRef.current = defaultGameState;
+    };
+
     const fetchInitialState = async () => {
+      if (!isSupabaseConfigured) {
+        console.log('[INIT] Supabase is not configured. Running in local-first mode.');
+        loadLocalFallback();
+        setIsLoadingState(false);
+        return;
+      }
+
       console.log('[INIT] Fetching initial game state from Supabase...');
       try {
         const { data, error } = await supabase
@@ -232,46 +276,29 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
           .single();
 
         if (error && error.code !== 'PGRST116') { 
-          console.error("[INIT] Error fetching initial game state from Supabase:", error);
-          toast({ title: "Database Error", description: `Failed to load game: ${error.message}`, variant: "destructive" });
-          setGameStateInternal(defaultGameState);
-          gameStateRef.current = defaultGameState;
-          await supabase.from('game_sessions').upsert({
-             id: GAME_SESSION_ID, 
-             game_data: serializeStateForSupabase(defaultGameState),
-             updated_at: new Date().toISOString() 
-          }, { onConflict: 'id' });
-
+          console.warn("[INIT] Supabase fetch failed, falling back to local state:", error.message);
+          loadLocalFallback();
         } else if (data && data.game_data) {
-          console.log("[INIT] Game state found in Supabase. Raw game_data:", JSON.stringify(data.game_data).substring(0, 500) + "...");
-          if (data.game_data.currentRound && data.game_data.currentRound.askedQuestions) {
-            console.log("[INIT] Raw askedQuestions from Supabase before deserialization:", JSON.stringify(data.game_data.currentRound.askedQuestions.map((q:any) => ({id: q.id, response: q.response ? String(q.response).substring(0,70)+'...' : undefined }))));
-          }
           const loadedState = deserializeState(data.game_data);
           setGameStateInternal(loadedState);
           gameStateRef.current = loadedState;
         } else {
-          console.log("[INIT] No game state found or empty game_data. Initializing with default and saving to Supabase.");
-          setGameStateInternal(defaultGameState);
-          gameStateRef.current = defaultGameState;
-          const { error: insertError } = await supabase
-            .from('game_sessions')
-            .upsert({ 
+          loadLocalFallback();
+          try {
+            await supabase.from('game_sessions').upsert({ 
               id: GAME_SESSION_ID, 
-              game_data: serializeStateForSupabase(defaultGameState),
+              game_data: serializeStateForSupabase(gameStateRef.current),
               updated_at: new Date().toISOString()
             }, { onConflict: 'id' }); 
-          if (insertError) {
-            console.error("[INIT] Error saving initial default state to Supabase:", insertError);
+          } catch (insertError) {
+            console.warn("[INIT] Warning saving initial default state to Supabase:", insertError);
           }
         }
       } catch (e) {
-        console.error("[INIT] Critical error during fetchInitialState:", e);
-        setGameStateInternal(defaultGameState);
-        gameStateRef.current = defaultGameState;
+        console.warn("[INIT] Error during fetchInitialState, using local fallback:", e);
+        loadLocalFallback();
       } finally {
-          setIsLoadingState(false);
-          console.log('[INIT] Initial state loading process complete. Admin PIN in context:', gameStateRef.current.adminPin);
+        setIsLoadingState(false);
       }
     };
 
@@ -279,52 +306,54 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
 
     // Load local auth statuses
     if (typeof window !== 'undefined') {
-        setIsAdminAuthenticated(localStorage.getItem(LOCAL_STORAGE_AUTH_PREFIX + 'admin') === 'true');
-        setIsHiderAuthenticated(localStorage.getItem(LOCAL_STORAGE_AUTH_PREFIX + 'hider') === 'true');
-        setIsSeekerAuthenticated(localStorage.getItem(LOCAL_STORAGE_AUTH_PREFIX + 'seeker') === 'true');
-    }
+      setIsAdminAuthenticated(localStorage.getItem(LOCAL_STORAGE_AUTH_PREFIX + 'admin') === 'true');
+      setIsHiderAuthenticated(localStorage.getItem(LOCAL_STORAGE_AUTH_PREFIX + 'hider') === 'true');
+      setIsSeekerAuthenticated(localStorage.getItem(LOCAL_STORAGE_AUTH_PREFIX + 'seeker') === 'true');
 
-    console.log('[REALTIME] Setting up Supabase subscription...');
-    const channel = supabase
-      .channel('game_state_updates')
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'game_sessions', filter: `id=eq.${GAME_SESSION_ID}` },
-        (payload) => {
-          console.log('[REALTIME] Received Supabase payload:', payload.eventType, 'at', new Date().toLocaleTimeString());
-          if (payload.new && (payload.new as any).game_data) {
-            const incomingGameData = (payload.new as any).game_data;
-            console.log('[REALTIME] Incoming game_data (raw). Admin PIN:', incomingGameData.adminPin, 'CurrentRound Status:', incomingGameData.currentRound?.status);
-             if (incomingGameData.currentRound && incomingGameData.currentRound.askedQuestions) {
-                console.log('[REALTIME] Incoming askedQuestions from Supabase before deserialization:', JSON.stringify(incomingGameData.currentRound.askedQuestions.map((q:any) => ({id: q.id, response: q.response ? String(q.response).substring(0,70)+'...' : undefined }))));
-             }
-            
-            const newGameStateFromSupabase = deserializeState(incomingGameData);
-            
-            setGameStateInternal(newGameStateFromSupabase); 
-            gameStateRef.current = newGameStateFromSupabase; 
-            console.log('[REALTIME] Change detected and applied. New Admin PIN in context:', newGameStateFromSupabase.adminPin);
-            if (newGameStateFromSupabase.currentRound?.askedQuestions) {
-                console.log('[REALTIME] Applied askedQuestions from Supabase (after deserialization):', newGameStateFromSupabase.currentRound.askedQuestions.map(q => ({id: q.id, response: q.response ? String(q.response).substring(0,70)+'...' : undefined })));
-            }
-          } else {
-            console.warn('[REALTIME] Payload did not contain new.game_data or new was null.');
+      // Cross-tab synchronization in local mode
+      const handleStorageChange = (e: StorageEvent) => {
+        if (e.key === LOCAL_GAME_KEY && e.newValue) {
+          try {
+            const incomingState = deserializeState(JSON.parse(e.newValue));
+            setGameStateInternal(incomingState);
+            gameStateRef.current = incomingState;
+          } catch (err) {
+            console.warn('[STORAGE_SYNC] Error syncing tab state:', err);
           }
         }
-      )
-      .subscribe((status, err) => {
-        if (status === 'SUBSCRIBED') {
-          console.log('[REALTIME] Successfully subscribed to real-time game updates!');
-        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          console.error(`[REALTIME] Subscription ${status}:`, err);
-        } else {
-          console.log('[REALTIME] Subscription status:', status);
-        }
-      });
+      };
+      window.addEventListener('storage', handleStorageChange);
+    }
+
+    let channel: any = null;
+    if (isSupabaseConfigured) {
+      console.log('[REALTIME] Setting up Supabase subscription...');
+      channel = supabase
+        .channel('game_state_updates')
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'game_sessions', filter: `id=eq.${GAME_SESSION_ID}` },
+          (payload) => {
+            if (payload.new && (payload.new as any).game_data) {
+              const newGameStateFromSupabase = deserializeState((payload.new as any).game_data);
+              setGameStateInternal(newGameStateFromSupabase); 
+              gameStateRef.current = newGameStateFromSupabase; 
+            }
+          }
+        )
+        .subscribe((status, err) => {
+          if (status === 'SUBSCRIBED') {
+            console.log('[REALTIME] Successfully subscribed to real-time game updates!');
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            console.warn(`[REALTIME] Subscription ${status}:`, err);
+          }
+        });
+    }
 
     return () => {
-      console.log('[REALTIME] Removing Supabase channel subscription.');
-      supabase.removeChannel(channel).catch(err => console.error('[REALTIME] Error removing channel:', err));
+      if (channel) {
+        supabase.removeChannel(channel).catch(err => console.error('[REALTIME] Error removing channel:', err));
+      }
     };
   }, []); // Empty dependency array for setup/teardown once
 
