@@ -19,9 +19,11 @@ import { EndgameBreachModal } from "@/components/game/EndgameBreachModal";
 import { MatchTimeline } from "@/components/game/MatchTimeline";
 import { MTR_STATIONS, calculateHaversineDistanceKm } from "@/lib/mtrData";
 import { useToast } from '@/hooks/use-toast';
-import { Eye, ShieldQuestion, Upload, Send, Dice5, Zap, Coins, HelpCircle, CheckCircle, Image as ImageIcon, Loader2, Thermometer as ThermometerIcon, AlertTriangle } from "lucide-react";
+import { Eye, ShieldQuestion, Upload, Send, Dice5, Zap, Coins, HelpCircle, CheckCircle, Image as ImageIcon, Loader2, Thermometer as ThermometerIcon, AlertTriangle, Map, Clock, Bell, Target, MapPin } from "lucide-react";
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { PinProtectPage } from '@/components/auth/PinProtectPage';
 
 interface SeekerPhotoDisplayProps {
@@ -65,6 +67,7 @@ function HiderPageContent() {
   const [rolledCurse, setRolledCurse] = useState<CurseRule | null>(null);
   const [hasPendingRoll, setHasPendingRoll] = useState(false);
   const [hiderCurseInputText, setHiderCurseInputText] = useState("");
+  const [hiderTab, setHiderTab] = useState<'map' | 'questions' | 'curses' | 'timeline'>('map');
 
 
   useEffect(() => {
@@ -304,8 +307,10 @@ function HiderPageContent() {
   const isLocallyRolledCurseDisplayed = rolledCurse && !globallyActiveCurseInfo;
 
 
+  const lockedHiderStation = currentRound?.lockedHiderStationId ? MTR_STATIONS[currentRound.lockedHiderStationId] : null;
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-4">
       <PageHeader
         title={`Hider View - Team: ${myTeam?.name || "N/A"}`}
         description={isHidingPhase ? "Choose your hiding spot! The seekers are waiting." : "Evade the seekers! Answer their questions carefully."}
@@ -316,115 +321,257 @@ function HiderPageContent() {
         isBreached={Boolean(currentRound?.isEndgameBreached)}
         role="hider"
       />
-       <Card>
-            <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-xl">
-                    <Coins className="h-6 w-6 text-yellow-500" />
-                    Team Coins: {myTeam?.coins ?? 0}
-                </CardTitle>
-                <CardDescription>Earn coins when seekers ask questions. Use coins for Curse Dice.</CardDescription>
-            </CardHeader>
-        </Card>
 
+      {/* Sticky Mobile Match HUD */}
+      <div className="sticky top-14 z-20 bg-background/95 backdrop-blur border rounded-xl p-2.5 shadow-sm space-y-2">
+        <div className="flex items-center justify-between gap-2 flex-wrap text-sm">
+          <div className="flex items-center gap-2">
+            <span className="flex items-center gap-1 font-bold text-amber-500 bg-amber-500/10 px-2.5 py-1 rounded-full border border-amber-500/20">
+              <Coins className="h-4 w-4" />
+              {myTeam?.coins ?? 0}
+            </span>
+            {lockedHiderStation ? (
+              <span className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 font-medium">
+                <MapPin className="h-3 w-3" />
+                {lockedHiderStation.name}
+              </span>
+            ) : (
+              <span className="text-xs px-2.5 py-1 rounded-full bg-muted text-muted-foreground border">
+                No Safe Zone Locked
+              </span>
+            )}
+          </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <TimerDisplay
-          title={timerTitle}
-          durationMinutes={currentPhaseDuration}
-          phaseStartTime={currentRound?.phaseStartTime ? new Date(currentRound.phaseStartTime) : undefined}
-          isActive={isHidingPhase || isSeekingPhase}
-          onTimerEnd={isHidingPhase ? () => {
-            toast({ title: "Hiding Phase Over!", description: "Seeking phase has begun!" });
-            if(currentRound?.status === 'hiding-phase') startSeekingPhase();
-          } : undefined}
-        />
-        <MTRMapDisplay role="hider" />
+          <div className="flex items-center gap-1.5">
+            {Boolean(currentRound?.isEndgameBreached) && (
+              <Badge variant="destructive" className="animate-pulse text-xs">
+                <AlertTriangle className="h-3 w-3 mr-1" />
+                ZONE BREACHED
+              </Badge>
+            )}
+            {questionsToAnswer.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setHiderTab('questions')}
+                className="h-7 text-xs px-2.5 bg-primary/10 border-primary/30 text-primary hover:bg-primary/20 animate-pulse font-semibold"
+              >
+                <Bell className="h-3 w-3 mr-1" />
+                {questionsToAnswer.length} Question{questionsToAnswer.length > 1 ? 's' : ''}
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* Segmented Mobile Tabs */}
+        <div className="grid grid-cols-4 gap-1 p-1 bg-muted/60 rounded-lg text-xs font-medium">
+          <button
+            type="button"
+            onClick={() => setHiderTab('map')}
+            className={`py-1.5 px-1 rounded-md transition-all text-center flex flex-col sm:flex-row items-center justify-center gap-1 ${
+              hiderTab === 'map'
+                ? 'bg-background shadow-sm text-foreground font-semibold'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Map className="h-3.5 w-3.5" />
+            <span>Map</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setHiderTab('questions')}
+            className={`py-1.5 px-1 rounded-md transition-all text-center flex flex-col sm:flex-row items-center justify-center gap-1 relative ${
+              hiderTab === 'questions'
+                ? 'bg-background shadow-sm text-foreground font-semibold'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <ShieldQuestion className="h-3.5 w-3.5" />
+            <span>Questions</span>
+            {questionsToAnswer.length > 0 && (
+              <span className="w-2 h-2 rounded-full bg-red-500 absolute top-1 right-2 sm:static sm:w-1.5 sm:h-1.5" />
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => setHiderTab('curses')}
+            className={`py-1.5 px-1 rounded-md transition-all text-center flex flex-col sm:flex-row items-center justify-center gap-1 relative ${
+              hiderTab === 'curses'
+                ? 'bg-background shadow-sm text-foreground font-semibold'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Zap className="h-3.5 w-3.5" />
+            <span>Curse Dice</span>
+            {Boolean(globallyActiveCurseInfo || rolledCurse) && (
+              <span className="w-2 h-2 rounded-full bg-purple-500 absolute top-1 right-2 sm:static sm:w-1.5 sm:h-1.5" />
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => setHiderTab('timeline')}
+            className={`py-1.5 px-1 rounded-md transition-all text-center flex flex-col sm:flex-row items-center justify-center gap-1 ${
+              hiderTab === 'timeline'
+                ? 'bg-background shadow-sm text-foreground font-semibold'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Clock className="h-3.5 w-3.5" />
+            <span>Feed</span>
+          </button>
+        </div>
       </div>
 
-      {isHidingPhase && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Hiding Phase Instructions</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground">
-              You have <strong>{HIDING_PHASE_DURATION_MINUTES} minutes</strong> to choose and travel to your hiding zone (500m radius from an MTR station).
-              Stay within your zone and remain together. Good luck!
-            </p>
-          </CardContent>
-        </Card>
+      {/* Tab Content */}
+      {hiderTab === 'map' && (
+        <div className="space-y-4">
+          <TimerDisplay
+            title={timerTitle}
+            durationMinutes={currentPhaseDuration}
+            phaseStartTime={currentRound?.phaseStartTime ? new Date(currentRound.phaseStartTime) : undefined}
+            isActive={isHidingPhase || isSeekingPhase}
+            onTimerEnd={isHidingPhase ? () => {
+              toast({ title: "Hiding Phase Over!", description: "Seeking phase has begun!" });
+              if(currentRound?.status === 'hiding-phase') startSeekingPhase();
+            } : undefined}
+          />
+
+          {isHidingPhase && (
+            <Card className="border-amber-500/30 bg-amber-500/5">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2 text-amber-700 dark:text-amber-400">
+                  <Eye className="h-4 w-4" />
+                  Hiding Phase Instructions
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="text-xs text-muted-foreground">
+                You have <strong>{HIDING_PHASE_DURATION_MINUTES} minutes</strong> to travel to your hiding zone (500m radius of an MTR station). Tap your chosen station on the map below and click <strong>"Lock In As Safe Zone"</strong>!
+              </CardContent>
+            </Card>
+          )}
+
+          <MTRMapDisplay role="hider" />
+        </div>
       )}
 
-      {isSeekingPhase && (
-        <>
+      {hiderTab === 'questions' && (
+        <div className="space-y-4">
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2"><ShieldQuestion /> Incoming Questions ({questionsToAnswer.length})</CardTitle>
-              <CardDescription>Seekers are asking questions. Respond strategically!</CardDescription>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <ShieldQuestion className="h-5 w-5 text-primary" />
+                Incoming Questions ({questionsToAnswer.length})
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Seekers are asking questions. Select a question below to respond.
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {questionsToAnswer.length === 0 ? (
-                <p className="text-muted-foreground">No unanswered questions from seekers yet. Stay hidden!</p>
+                <div className="text-center py-8 text-muted-foreground">
+                  <ShieldQuestion className="h-10 w-10 mx-auto mb-2 opacity-30" />
+                  <p className="text-sm font-medium">No unanswered questions!</p>
+                  <p className="text-xs">Stay alert and keep an eye on seeker movements.</p>
+                </div>
               ) : (
-                <ScrollArea className="h-[300px] pr-4">
-                <ul className="space-y-4">
-                  {questionsToAnswer.map(q => (
-                    <li key={q.id} className={`p-3 border rounded-md cursor-pointer hover:bg-accent/10 ${selectedQuestionToAnswer?.id === q.id ? 'ring-2 ring-primary bg-primary/5' : 'bg-card/80'}`} onClick={() => setSelectedQuestionToAnswer(q)}>
-                      <p className="font-semibold text-primary">{q.category}: <span className="text-foreground">{q.text}</span></p>
-                      <p className="text-xs text-muted-foreground">From: Team {teams.find(t => t.id === q.askingTeamId)?.name || 'Seeker'} | Received: {new Date(q.timestamp).toLocaleTimeString()}</p>
-                    </li>
-                  ))}
-                </ul>
+                <ScrollArea className="max-h-[300px] pr-2">
+                  <ul className="space-y-2.5">
+                    {questionsToAnswer.map(q => (
+                      <li
+                        key={q.id}
+                        className={`p-3 border rounded-xl cursor-pointer transition-colors ${
+                          selectedQuestionToAnswer?.id === q.id
+                            ? 'ring-2 ring-primary bg-primary/10 border-primary/40'
+                            : 'bg-card hover:bg-accent/10'
+                        }`}
+                        onClick={() => setSelectedQuestionToAnswer(q)}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-semibold text-xs text-primary px-2 py-0.5 rounded-full bg-primary/10">
+                            {q.category}
+                          </span>
+                          <span className="text-[11px] text-muted-foreground">
+                            {new Date(q.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        <p className="font-medium text-sm text-foreground">{q.text}</p>
+                        <p className="text-[11px] text-muted-foreground mt-1">
+                          From: Team {teams.find(t => t.id === q.askingTeamId)?.name || 'Seeker'}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
                 </ScrollArea>
               )}
             </CardContent>
           </Card>
 
           {selectedQuestionToAnswer && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Respond to: "{selectedQuestionToAnswer.text.substring(0,50)}..."</CardTitle>
-                <CardDescription>Category: {selectedQuestionToAnswer.category}</CardDescription>
+            <Card className="border-primary/40 shadow-sm">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <Badge variant="outline">{selectedQuestionToAnswer.category}</Badge>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-xs"
+                    onClick={() => setSelectedQuestionToAnswer(null)}
+                  >
+                    Close
+                  </Button>
+                </div>
+                <CardTitle className="text-sm font-medium pt-1">
+                  "{selectedQuestionToAnswer.text}"
+                </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-4 pt-0">
                 {["Radar", "Precision", "Scan"].includes(selectedQuestionToAnswer.category) && (
-                  <div>
-                    <Label>Your Answer (Truthful Yes/No):</Label>
-                    <RadioGroup onValueChange={(val: "yes" | "no") => setYesNoResponse(val)} value={yesNoResponse} className="flex gap-4 mt-1">
-                      <div className="flex items-center space-x-2">
+                  <div className="space-y-2">
+                    <Label className="text-xs font-semibold">Your Truthful Answer:</Label>
+                    <RadioGroup onValueChange={(val: "yes" | "no") => setYesNoResponse(val)} value={yesNoResponse} className="grid grid-cols-2 gap-3">
+                      <Label
+                        htmlFor={`yes-${selectedQuestionToAnswer.id}`}
+                        className={`flex items-center justify-center gap-2 p-3 rounded-xl border cursor-pointer font-bold transition-colors ${
+                          yesNoResponse === 'yes' ? 'bg-emerald-500/10 border-emerald-500 text-emerald-700 dark:text-emerald-300' : 'bg-background hover:bg-muted'
+                        }`}
+                      >
                         <RadioGroupItem value="yes" id={`yes-${selectedQuestionToAnswer.id}`} />
-                        <Label htmlFor={`yes-${selectedQuestionToAnswer.id}`}>Yes</Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
+                        YES
+                      </Label>
+                      <Label
+                        htmlFor={`no-${selectedQuestionToAnswer.id}`}
+                        className={`flex items-center justify-center gap-2 p-3 rounded-xl border cursor-pointer font-bold transition-colors ${
+                          yesNoResponse === 'no' ? 'bg-red-500/10 border-red-500 text-red-700 dark:text-red-300' : 'bg-background hover:bg-muted'
+                        }`}
+                      >
                         <RadioGroupItem value="no" id={`no-${selectedQuestionToAnswer.id}`} />
-                        <Label htmlFor={`no-${selectedQuestionToAnswer.id}`}>No</Label>
-                      </div>
+                        NO
+                      </Label>
                     </RadioGroup>
                   </div>
                 )}
+
                 {selectedQuestionToAnswer.category === "Photo" && (
                   currentRound?.isEndgameBreached ? (
-                    <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-md text-red-600 dark:text-red-400 text-sm flex items-center gap-2">
-                      <AlertTriangle className="h-5 w-5 shrink-0" />
+                    <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-md text-red-600 dark:text-red-400 text-xs flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 shrink-0" />
                       <span><strong>Endgame Breach Active:</strong> Seekers have breached your 500m zone! Photo clues are disabled.</span>
                     </div>
                   ) : (
                     <div className="space-y-2">
-                      <Label htmlFor="photo-upload">Upload Photo (no direct clues):</Label>
+                      <Label htmlFor="photo-upload" className="text-xs font-semibold">Upload Photo (no direct station identifiers):</Label>
                       <Input
                         id="photo-upload"
                         type="file"
                         accept="image/*"
                         onChange={handlePhotoInputChange}
-                        className="file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/20 file:text-primary hover:file:bg-primary/30"
+                        className="file:mr-3 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-primary/20 file:text-primary hover:file:bg-primary/30 text-xs"
                       />
                       {responsePhotoPreview && (
-                          <div className="mt-2">
-                              <p className="text-xs text-muted-foreground mb-1">Preview:</p>
-                              <Image src={responsePhotoPreview} alt="Response photo preview" width={200} height={150} className="rounded-md border object-contain" data-ai-hint="preview image" />
-                          </div>
+                        <div className="mt-2">
+                          <Image src={responsePhotoPreview} alt="Response photo preview" width={200} height={150} className="rounded-md border object-contain mx-auto" />
+                        </div>
                       )}
-                      {responsePhoto && !responsePhotoPreview && <p className="text-xs text-muted-foreground">Selected: {responsePhoto.name}</p>}
                     </div>
                   )
                 )}
@@ -449,19 +596,19 @@ function HiderPageContent() {
                   return (
                     <div className="space-y-3">
                       {hiderStation && stA && stB && distA !== null && distB !== null ? (
-                        <div className="p-3 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-md text-sm space-y-2">
-                          <div className="flex items-center gap-2 font-semibold text-blue-700 dark:text-blue-300">
+                        <div className="p-3 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-xl text-xs space-y-2">
+                          <div className="flex items-center gap-1.5 font-semibold text-blue-700 dark:text-blue-300">
                             <ThermometerIcon className="h-4 w-4" />
-                            <span>Automated Distance Calculation</span>
+                            <span>Automated Exact Distance Calculation</span>
                           </div>
-                          <p className="text-xs text-muted-foreground">
-                            Locked Spot: <strong>{hiderStation.name} ({hiderStation.nameZh})</strong>
+                          <p className="text-[11px] text-muted-foreground">
+                            Locked Safe Zone: <strong>{hiderStation.name} ({hiderStation.nameZh})</strong>
                           </p>
                           <div className="grid grid-cols-2 gap-2 text-xs">
-                            <div className="p-2 bg-background/80 rounded border">
+                            <div className="p-2 bg-background rounded-lg border">
                               <span className="font-medium">{stA.name}</span>: {distA.toFixed(2)} km
                             </div>
-                            <div className="p-2 bg-background/80 rounded border">
+                            <div className="p-2 bg-background rounded-lg border">
                               <span className="font-medium">{stB.name}</span>: {distB.toFixed(2)} km
                             </div>
                           </div>
@@ -473,32 +620,35 @@ function HiderPageContent() {
                               type="button"
                               size="sm"
                               variant="outline"
+                              className="text-xs h-7"
                               onClick={() => setResponseText(`Closer to ${stA.name} (${distA!.toFixed(2)}km vs ${distB!.toFixed(2)}km)`)}
                             >
-                              Select: Closer to {stA.name}
+                              Closer to {stA.name}
                             </Button>
                             <Button
                               type="button"
                               size="sm"
                               variant="outline"
+                              className="text-xs h-7"
                               onClick={() => setResponseText(`Closer to ${stB.name} (${distB!.toFixed(2)}km vs ${distA!.toFixed(2)}km)`)}
                             >
-                              Select: Closer to {stB.name}
+                              Closer to {stB.name}
                             </Button>
                           </div>
                         </div>
                       ) : (
-                        <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-md text-xs text-amber-700 dark:text-amber-300">
-                          💡 <em>Tip: Lock your hiding station on the MTR map above to calculate automated exact distances between stations!</em>
+                        <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-xl text-xs text-amber-700 dark:text-amber-300">
+                          💡 <em>Tip: Lock your hiding station on the Map tab to auto-calculate exact distance between {stA?.name || 'A'} and {stB?.name || 'B'}!</em>
                         </div>
                       )}
                       <div className="space-y-1">
-                        <Label htmlFor="thermometer-response">Your Response:</Label>
+                        <Label htmlFor="thermometer-response" className="text-xs">Response Text:</Label>
                         <Input
                           id="thermometer-response"
                           value={responseText}
                           onChange={(e) => setResponseText(e.target.value)}
                           placeholder="e.g. Closer to Admiralty"
+                          className="text-xs"
                         />
                       </div>
                     </div>
@@ -506,132 +656,150 @@ function HiderPageContent() {
                 })()}
 
                 {selectedQuestionToAnswer.category === "Relative" && (
-                   <div className="space-y-2">
-                     <Label htmlFor="text-response">Your Detailed Response:</Label>
-                     <Textarea
-                        id="text-response"
-                        value={responseText}
-                        onChange={(e) => setResponseText(e.target.value)}
-                        placeholder="Enter your response..."
-                      />
-                   </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="text-response" className="text-xs">Your Detailed Response:</Label>
+                    <Textarea
+                      id="text-response"
+                      value={responseText}
+                      onChange={(e) => setResponseText(e.target.value)}
+                      placeholder="Enter your response..."
+                      className="text-xs min-h-[80px]"
+                    />
+                  </div>
                 )}
               </CardContent>
-              <CardFooter>
+              <CardFooter className="pt-0">
                 <Button
                   onClick={handleSendResponse}
                   disabled={selectedQuestionToAnswer.category === "Photo" && Boolean(currentRound?.isEndgameBreached)}
-                  className="flex items-center gap-2"
+                  className="w-full flex items-center justify-center gap-2"
                 >
-                  <Send /> Send Response
+                  <Send className="h-4 w-4" /> Send Response to Seekers
                 </Button>
               </CardFooter>
             </Card>
           )}
+        </div>
+      )}
 
+      {hiderTab === 'curses' && (
+        <div className="space-y-4">
           <Card>
-            <CardHeader>
-                <CardTitle className="flex items-center gap-2"><Zap/> Curse Dice</CardTitle>
-                <CardDescription>Cost: {CURSE_DICE_COST} coins. Max {MAX_CURSES_PER_ROUND} uses per round. Curses used this round: {myTeam?.cursesUsed ?? 0}/{MAX_CURSES_PER_ROUND}</CardDescription>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Zap className="h-5 w-5 text-purple-500" />
+                  Curse Dice
+                </CardTitle>
+                <Badge variant="secondary" className="text-xs">
+                  {myTeam?.cursesUsed ?? 0} / {MAX_CURSES_PER_ROUND} Used
+                </Badge>
+              </div>
+              <CardDescription className="text-xs">
+                Roll the Jet Lag Curse Dice to handicap the seekers (Cost: {CURSE_DICE_COST} coins).
+              </CardDescription>
             </CardHeader>
-            <CardContent className="flex flex-wrap gap-4 items-start">
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
                 <Button
-                    onClick={handleBuyCurseDice}
-                    disabled={!myTeam || myTeam.coins < CURSE_DICE_COST || (myTeam.cursesUsed || 0) >= MAX_CURSES_PER_ROUND || hasPendingRoll || !!globallyActiveCurseInfo || !!rolledCurse}
-                    className="flex items-center gap-2"
+                  onClick={handleBuyCurseDice}
+                  disabled={!myTeam || myTeam.coins < CURSE_DICE_COST || (myTeam.cursesUsed || 0) >= MAX_CURSES_PER_ROUND || hasPendingRoll || !!globallyActiveCurseInfo || !!rolledCurse}
+                  className="w-full flex items-center justify-center gap-2 text-xs"
                 >
-                    <Dice5/> Buy Curse Dice ({CURSE_DICE_COST} coins)
+                  <Dice5 className="h-4 w-4" /> Buy ({CURSE_DICE_COST} coins)
                 </Button>
                 <Button
-                    onClick={handleRollCurseDice}
-                    disabled={!myTeam || !hasPendingRoll || (myTeam.cursesUsed || 0) >= MAX_CURSES_PER_ROUND || !!rolledCurse || !!globallyActiveCurseInfo}
-                    variant="outline"
-                    className="flex items-center gap-2"
+                  onClick={handleRollCurseDice}
+                  disabled={!myTeam || !hasPendingRoll || (myTeam.cursesUsed || 0) >= MAX_CURSES_PER_ROUND || !!rolledCurse || !!globallyActiveCurseInfo}
+                  variant="outline"
+                  className="w-full flex items-center justify-center gap-2 text-xs font-bold"
                 >
-                    Roll Dice!
+                  🎲 Roll Dice!
                 </Button>
-            </CardContent>
+              </div>
 
-            {isLocallyRolledCurseDisplayed && displayedActiveCurseDetails && (
-                <CardContent className="pt-4 space-y-3">
-                  <Separator/>
-                  <h4 className="font-semibold text-lg text-accent flex items-center gap-2">
-                      {displayedActiveCurseDetails.icon && <displayedActiveCurseDetails.icon className="h-5 w-5"/>}
-                      Rolled: {displayedActiveCurseDetails.name}
-                  </h4>
-                  <p className="text-sm">{displayedActiveCurseDetails.description}</p>
-                  <p className="text-xs text-muted-foreground"><strong>Effect on Seekers:</strong> {displayedActiveCurseDetails.effect}</p>
+              {isLocallyRolledCurseDisplayed && displayedActiveCurseDetails && (
+                <div className="p-4 border rounded-xl bg-purple-500/10 border-purple-500/30 space-y-3">
+                  <div className="flex items-center gap-2 text-base font-bold text-purple-700 dark:text-purple-300">
+                    {displayedActiveCurseDetails.icon && <displayedActiveCurseDetails.icon className="h-5 w-5" />}
+                    <span>Rolled: #{displayedActiveCurseDetails.number} - {displayedActiveCurseDetails.name}</span>
+                  </div>
+                  <p className="text-xs text-foreground">{displayedActiveCurseDetails.description}</p>
+                  <p className="text-xs text-muted-foreground"><strong>Effect:</strong> {displayedActiveCurseDetails.effect}</p>
 
                   {displayedActiveCurseDetails.requiresHiderTextInput && (
-                    <div className="space-y-2">
-                      <Label htmlFor="hider-curse-input">Provide Details (e.g., Animal Category for Zoologist):</Label>
+                    <div className="space-y-1.5 pt-1">
+                      <Label htmlFor="hider-curse-input" className="text-xs font-semibold">Provide Details (e.g., Animal Category):</Label>
                       <Textarea
                         id="hider-curse-input"
                         value={hiderCurseInputText}
                         onChange={(e) => setHiderCurseInputText(e.target.value)}
-                        placeholder="Enter required details here..."
-                        className="bg-background"
+                        placeholder="Enter required curse details..."
+                        className="bg-background text-xs"
                       />
                     </div>
                   )}
                   <Button
                     onClick={handleActivateRolledCurse}
                     disabled={(myTeam?.cursesUsed || 0) >= MAX_CURSES_PER_ROUND || !!globallyActiveCurseInfo || (displayedActiveCurseDetails.requiresHiderTextInput && !hiderCurseInputText.trim())}
-                    className="w-full"
+                    className="w-full bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold"
                   >
-                    Activate {displayedActiveCurseDetails.name} for Seekers
+                    Activate {displayedActiveCurseDetails.name} on Seekers
                   </Button>
-                </CardContent>
-            )}
+                </div>
+              )}
 
-            {globallyActiveCurseInfo && displayedActiveCurseDetails && !isLocallyRolledCurseDisplayed && (
-                 <CardFooter className="pt-4 mt-2 border-t">
-                    <div className="p-4 border rounded-md bg-primary/10 w-full space-y-2">
-                        <h4 className="font-semibold text-lg text-primary flex items-center gap-2">
-                            {displayedActiveCurseDetails.icon && <displayedActiveCurseDetails.icon className="h-5 w-5"/>}
-                            Curse Active: {displayedActiveCurseDetails.name}
-                        </h4>
-                        <p className="text-sm">{displayedActiveCurseDetails.description}</p>
-                         {globallyActiveCurseInfo.hiderInputText && (
-                            <p className="text-sm mt-1"><strong>Hider's Input:</strong> {globallyActiveCurseInfo.hiderInputText}</p>
-                        )}
-                        <p className="text-xs text-muted-foreground mt-1"><strong>Effect on Seekers:</strong> {displayedActiveCurseDetails.effect}</p>
+              {globallyActiveCurseInfo && displayedActiveCurseDetails && !isLocallyRolledCurseDisplayed && (
+                <div className="p-4 border rounded-xl bg-amber-500/10 border-amber-500/30 space-y-3">
+                  <div className="flex items-center gap-2 text-base font-bold text-amber-700 dark:text-amber-300">
+                    {displayedActiveCurseDetails.icon && <displayedActiveCurseDetails.icon className="h-5 w-5" />}
+                    <span>Active: {displayedActiveCurseDetails.name}</span>
+                  </div>
+                  <p className="text-xs text-foreground">{displayedActiveCurseDetails.description}</p>
+                  {globallyActiveCurseInfo.hiderInputText && (
+                    <p className="text-xs"><strong>Your Instruction:</strong> {globallyActiveCurseInfo.hiderInputText}</p>
+                  )}
+                  <p className="text-xs text-muted-foreground"><strong>Effect:</strong> {displayedActiveCurseDetails.effect}</p>
 
-                        {displayedActiveCurseDetails.durationMinutes && globallyActiveCurseInfo.startTime && globallyActiveCurseInfo.resolutionStatus === 'pending_seeker_action' && (
-                           <div className="mt-2">
-                             <TimerDisplay
-                                title="Curse Active For"
-                                durationMinutes={displayedActiveCurseDetails.durationMinutes}
-                                phaseStartTime={new Date(globallyActiveCurseInfo.startTime)}
-                                isActive={!!globallyActiveCurseInfo && globallyActiveCurseInfo.resolutionStatus === 'pending_seeker_action'}
-                                onTimerEnd={() => { /* Seeker side handles clearing */ }}
-                                className="text-sm"
-                             />
-                           </div>
-                        )}
-
-                        {displayedActiveCurseDetails.requiresSeekerAction === 'photo' && globallyActiveCurseInfo.seekerSubmittedPhotoUrl && globallyActiveCurseInfo.resolutionStatus === 'pending_hider_acknowledgement' && (
-                          <div className="space-y-2 p-3 bg-background rounded-md border border-dashed">
-                            <SeekerPhotoDisplay photoUrl={globallyActiveCurseInfo.seekerSubmittedPhotoUrl} />
-                            <Button onClick={handleHiderAcknowledgePhoto} className="w-full mt-2 flex items-center gap-2">
-                              <CheckCircle className="h-4 w-4" /> Accept Seeker's Photo & End Curse
-                            </Button>
-                          </div>
-                        )}
-                         {displayedActiveCurseDetails.requiresSeekerAction === 'photo' && !globallyActiveCurseInfo.seekerSubmittedPhotoUrl && globallyActiveCurseInfo.resolutionStatus === 'pending_seeker_action' && (
-                            <p className="text-sm text-muted-foreground italic">Waiting for seeker to submit photo for this curse...</p>
-                        )}
-                         {globallyActiveCurseInfo.resolutionStatus === 'resolved' && (
-                            <p className="text-sm text-green-600 font-semibold">Curse has been resolved.</p>
-                        )}
+                  {displayedActiveCurseDetails.durationMinutes && globallyActiveCurseInfo.startTime && globallyActiveCurseInfo.resolutionStatus === 'pending_seeker_action' && (
+                    <div className="pt-2">
+                      <TimerDisplay
+                        title="Curse Active For"
+                        durationMinutes={displayedActiveCurseDetails.durationMinutes}
+                        phaseStartTime={new Date(globallyActiveCurseInfo.startTime)}
+                        isActive={!!globallyActiveCurseInfo && globallyActiveCurseInfo.resolutionStatus === 'pending_seeker_action'}
+                        onTimerEnd={() => {}}
+                        className="text-xs"
+                      />
                     </div>
-                </CardFooter>
-            )}
+                  )}
+
+                  {displayedActiveCurseDetails.requiresSeekerAction === 'photo' && globallyActiveCurseInfo.seekerSubmittedPhotoUrl && globallyActiveCurseInfo.resolutionStatus === 'pending_hider_acknowledgement' && (
+                    <div className="space-y-2 p-3 bg-background rounded-lg border border-dashed">
+                      <SeekerPhotoDisplay photoUrl={globallyActiveCurseInfo.seekerSubmittedPhotoUrl} />
+                      <Button onClick={handleHiderAcknowledgePhoto} className="w-full mt-2 flex items-center justify-center gap-2 text-xs">
+                        <CheckCircle className="h-4 w-4" /> Accept Seeker's Photo & End Curse
+                      </Button>
+                    </div>
+                  )}
+
+                  {displayedActiveCurseDetails.requiresSeekerAction === 'photo' && !globallyActiveCurseInfo.seekerSubmittedPhotoUrl && globallyActiveCurseInfo.resolutionStatus === 'pending_seeker_action' && (
+                    <p className="text-xs text-muted-foreground italic">Waiting for seeker to submit curse completion photo...</p>
+                  )}
+
+                  {globallyActiveCurseInfo.resolutionStatus === 'resolved' && (
+                    <p className="text-xs text-emerald-600 font-semibold flex items-center gap-1">
+                      <CheckCircle className="h-4 w-4" /> Curse has been resolved.
+                    </p>
+                  )}
+                </div>
+              )}
+            </CardContent>
           </Card>
-        </>
+        </div>
       )}
 
-      {currentRound && (
+      {hiderTab === 'timeline' && currentRound && (
         <MatchTimeline events={currentRound.timeline} />
       )}
     </div>

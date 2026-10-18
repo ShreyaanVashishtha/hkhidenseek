@@ -16,9 +16,10 @@ import { PageHeader } from "@/components/PageHeader";
 import { TimerDisplay } from "@/components/game/TimerDisplay";
 import { VetoConsequenceModal } from "@/components/game/VetoConsequenceModal";
 import { useToast } from '@/hooks/use-toast';
-import { Search, ShieldQuestion, Send, ThumbsUp, ThumbsDown, ListChecks, Zap, Upload, CheckSquare, AlertTriangle, Dice6, Sparkles, Coins, Trophy, Flame } from "lucide-react";
+import { Search, ShieldQuestion, Send, ThumbsUp, ThumbsDown, ListChecks, Zap, Upload, CheckSquare, AlertTriangle, Dice6, Sparkles, Coins, Trophy, Flame, Map, Clock, Target, HelpCircle } from "lucide-react";
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { PinProtectPage } from '@/components/auth/PinProtectPage';
 import { MTRMapDisplay } from "@/components/game/MTRMapDisplay";
 import { MTR_STATIONS, MTRStation } from "@/lib/mtrData";
@@ -164,6 +165,7 @@ function SeekerPageContent() {
   const penaltyEndTime = currentRound?.seekerPenaltyEndTime ? new Date(currentRound.seekerPenaltyEndTime) : null;
   const isPenaltyActive = Boolean(penaltyEndTime && penaltyEndTime.getTime() > Date.now());
   const [penaltyTimeRemaining, setPenaltyTimeRemaining] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'map' | 'questions' | 'challenges' | 'timeline'>('map');
 
   useEffect(() => {
     if (!penaltyEndTime) {
@@ -301,189 +303,130 @@ function SeekerPageContent() {
         icon={Search}
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <TimerDisplay 
-          title={timerTitle}
-          durationMinutes={currentPhaseDuration}
-          phaseStartTime={currentRound?.phaseStartTime ? new Date(currentRound.phaseStartTime) : undefined}
-          isActive={isHidingPhase || isSeekingPhase}
-          onTimerEnd={isHidingPhase ? () => {
-            toast({ title: "Hiding Phase Over!", description: "Seeking phase has begun!" });
-            if(currentRound?.status === 'hiding-phase') startSeekingPhase(); 
-          } : undefined}
-          className="lg:col-span-1"
-        />
-         {isPenaltyActive && penaltyEndTime && (
-          <TimerDisplay
-            title="Penalty Time Left"
-            durationMinutes={CHALLENGE_PENALTY_MINUTES}
-            phaseStartTime={new Date(penaltyEndTime.getTime() - CHALLENGE_PENALTY_MINUTES * 60 * 1000)}
-            isActive={isPenaltyActive}
-            onTimerEnd={() => {
-              toast({ title: "Penalty Over!", description: "You can resume normal actions." });
-            }}
-            className="lg:col-span-1"
-          />
-        )}
+      {/* Sticky Quick Mobile Match HUD */}
+      <div className="sticky top-14 z-30 bg-card/95 backdrop-blur-md border border-border/80 rounded-xl p-2.5 shadow-md flex items-center justify-between gap-2 text-xs">
+        <div className="flex items-center gap-2 font-bold">
+          <div className="flex items-center gap-1 text-amber-500 font-mono">
+            <Coins className="h-4 w-4" />
+            <span>{myTeam?.coins ?? 0}</span>
+          </div>
+          <span className="text-muted-foreground/40">•</span>
+          <div className="flex items-center gap-1 text-sky-500 font-mono">
+            <Target className="h-4 w-4" />
+            <span>{70 - (currentRound?.eliminatedStationIds?.length || 0)}/70</span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          {isPenaltyActive && (
+            <Badge variant="destructive" className="animate-pulse text-[10px] px-2 py-0.5">
+              🧊 Freeze ({penaltyTimeRemaining || '15m'})
+            </Badge>
+          )}
+          {currentRound?.isEndgameBreached && (
+            <Badge variant="destructive" className="animate-bounce text-[10px] px-2 py-0.5">
+              🚨 500m Breach
+            </Badge>
+          )}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setIsChallengeModalOpen(true)}
+            className="h-7 text-[11px] px-2.5 border-amber-500/40 text-amber-500 hover:bg-amber-500/10 font-bold flex items-center gap-1 rounded-full shadow-sm"
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            {currentRound?.activeChallenge ? "Active Challenge" : "Draw Cards"}
+          </Button>
+        </div>
       </div>
 
-      {/* Interactive Hong Kong MTR Transit Radar Map */}
-      <div className="w-full">
-        <MTRMapDisplay 
-          role="seeker"
-          onSelectStation={(station: MTRStation) => {
-            setQuestionText((prev: string) => 
-              prev ? `${prev}, ${station.name} (${station.nameZh})` : `${station.name} (${station.nameZh})`
-            );
-          }}
-        />
-      </div>
-      
-      {isHidingPhase && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Hiding Phase Active</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground">Hiders are choosing their location. You cannot move or perform actions yet. Plan your strategy!</p>
-          </CardContent>
-        </Card>
-      )}
+      <Tabs value={activeTab} onValueChange={(val: any) => setActiveTab(val)} className="w-full space-y-4">
+        <TabsList className="grid grid-cols-4 w-full h-11 bg-muted/90 backdrop-blur rounded-xl p-1 shadow-sm">
+          <TabsTrigger value="map" className="text-xs font-semibold py-1.5 flex items-center justify-center gap-1">
+            <Map className="h-3.5 w-3.5" />
+            <span>Map</span>
+          </TabsTrigger>
+          <TabsTrigger value="questions" className="text-xs font-semibold py-1.5 flex items-center justify-center gap-1">
+            <ShieldQuestion className="h-3.5 w-3.5" />
+            <span>Ask ({displayedAskedQuestions.length})</span>
+          </TabsTrigger>
+          <TabsTrigger value="challenges" className="text-xs font-semibold py-1.5 flex items-center justify-center gap-1 relative">
+            <Sparkles className="h-3.5 w-3.5" />
+            <span>Deck</span>
+            {currentRound?.activeChallenge && (
+              <span className="w-2 h-2 rounded-full bg-amber-500 absolute top-1 right-2 animate-ping" />
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="timeline" className="text-xs font-semibold py-1.5 flex items-center justify-center gap-1">
+            <Clock className="h-3.5 w-3.5" />
+            <span>Feed</span>
+          </TabsTrigger>
+        </TabsList>
 
-      {isSeekingPhase && (
-        <>
-          {activeCurseDetails && currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved' && (
-            <Card className="border-destructive bg-destructive/10">
+        {/* TAB 1: RADAR MAP */}
+        <TabsContent value="map" className="space-y-4 mt-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <TimerDisplay 
+              title={timerTitle}
+              durationMinutes={currentPhaseDuration}
+              phaseStartTime={currentRound?.phaseStartTime ? new Date(currentRound.phaseStartTime) : undefined}
+              isActive={isHidingPhase || isSeekingPhase}
+              onTimerEnd={isHidingPhase ? () => {
+                toast({ title: "Hiding Phase Over!", description: "Seeking phase has begun!" });
+                if(currentRound?.status === 'hiding-phase') startSeekingPhase(); 
+              } : undefined}
+            />
+            {isPenaltyActive && penaltyEndTime && (
+              <TimerDisplay
+                title="Penalty Time Left"
+                durationMinutes={CHALLENGE_PENALTY_MINUTES}
+                phaseStartTime={new Date(penaltyEndTime.getTime() - CHALLENGE_PENALTY_MINUTES * 60 * 1000)}
+                isActive={isPenaltyActive}
+                onTimerEnd={() => {
+                  toast({ title: "Penalty Over!", description: "You can resume normal actions." });
+                }}
+              />
+            )}
+          </div>
+
+          <div className="w-full">
+            <MTRMapDisplay 
+              role="seeker"
+              onSelectStation={(station: MTRStation) => {
+                setQuestionText((prev: string) => 
+                  prev ? `${prev}, ${station.name} (${station.nameZh})` : `${station.name} (${station.nameZh})`
+                );
+                setActiveTab('questions');
+                toast({
+                  title: `${station.name} Selected`,
+                  description: "Switched to Questions tab with station name filled in."
+                });
+              }}
+            />
+          </div>
+
+          {isHidingPhase && (
+            <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-destructive">
-                  {activeCurseDetails.icon && <activeCurseDetails.icon className="h-6 w-6" />}
-                  Curse Active: {activeCurseDetails.name}
-                </CardTitle>
-                <CardDescription className="text-destructive/90">
-                  {activeCurseDetails.description} <br />
-                  { (activeCurseDetails.requiresHiderTextInput && currentRound.activeCurse.hiderInputText) && (
-                    <span className="font-semibold">Hider's input: "{currentRound.activeCurse.hiderInputText}"</span>
-                  )}
-                  <br/>
-                  <strong>Effect on Seekers:</strong> {activeCurseDetails.effect}
-                </CardDescription>
+                <CardTitle>Hiding Phase Active</CardTitle>
               </CardHeader>
               <CardContent>
-                {currentRound.activeCurse.resolutionStatus === 'pending_hider_acknowledgement' ? (
-                  <p className="font-semibold text-primary">Photo submitted. Awaiting hider review.</p>
-                ) : activeCurseDetails.durationMinutes && currentRound.activeCurse.startTime && currentRound.activeCurse.resolutionStatus === 'pending_seeker_action' ? (
-                  <>
-                  <TimerDisplay
-                    title="Curse Time Remaining"
-                    durationMinutes={activeCurseDetails.durationMinutes}
-                    phaseStartTime={new Date(currentRound.activeCurse.startTime)}
-                    isActive={currentRound.activeCurse.resolutionStatus === 'pending_seeker_action'}
-                    onTimerEnd={() => {
-                      toast({ title: "Curse Expired", description: `${activeCurseDetails.name} is no longer active.` });
-                      clearActiveCurse(); 
-                    }}
-                    className="text-sm"
-                  />
-                  {activeCurseDetails.number === 3 && ( // Curse of the Gambler's Feet
-                    <div className="mt-3">
-                      <Button onClick={handleRollForGamblerSteps} className="w-full flex items-center gap-2">
-                        <Dice6 className="h-4 w-4"/> Roll for Steps
-                      </Button>
-                      {gamblerSteps !== null && (
-                        <p className="mt-2 text-center text-lg font-semibold">You can take: {gamblerSteps} step(s). Re-roll after moving.</p>
-                      )}
-                    </div>
-                  )}
-                  </>
-                ) : activeCurseDetails.requiresSeekerAction === 'confirmation' && currentRound.activeCurse.resolutionStatus === 'pending_seeker_action' ? (
-                  <Button onClick={() => seekerCompletesCurseAction()} className="w-full flex items-center gap-2 mt-2" disabled={isCurseActionDisabled}>
-                     <CheckSquare className="h-4 w-4" /> Mark Curse Resolved
-                  </Button>
-                ) : activeCurseDetails.requiresSeekerAction === 'photo' && currentRound.activeCurse.resolutionStatus === 'pending_seeker_action' ? (
-                   <SeekerCursePhotoUpload 
-                     onPhotoSubmit={(file) => seekerCompletesCurseAction(file)}
-                     disabled={isCurseActionDisabled}
-                   />
-                ) : null }
+                <p className="text-muted-foreground text-sm">Hiders are traveling to their chosen station. You cannot move or ask questions yet. Plan your route!</p>
               </CardContent>
             </Card>
           )}
+        </TabsContent>
 
-          {/* Jet Lag Hong Kong Challenge Deck */}
-          <Card className="border-amber-500/40 bg-gradient-to-br from-slate-900 via-slate-900 to-amber-950/20 shadow-xl overflow-hidden">
-            <CardHeader className="pb-3 border-b border-slate-800">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="h-5 w-5 text-amber-400" />
-                  <CardTitle className="text-base text-white">Challenge Card Deck</CardTitle>
-                </div>
-                <div className="flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/30 px-2.5 py-1 rounded-md text-xs font-mono font-bold text-amber-300">
-                  <Coins className="h-3.5 w-3.5 text-amber-400" />
-                  <span>{myTeam?.coins ?? 0} Team Coins</span>
-                </div>
-              </div>
-              <CardDescription className="text-xs text-slate-400">
-                Draw and complete authentic Hong Kong tasks to earn coins for asking questions.
-              </CardDescription>
-            </CardHeader>
-
-            <CardContent className="p-4">
-              {currentRound?.activeChallenge ? (
-                <div className="bg-slate-950/70 border border-amber-500/30 rounded-xl p-4 space-y-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <Badge className="bg-amber-600 text-white text-[10px]">
-                      ACTIVE: {currentRound.activeChallenge.card.difficulty.toUpperCase()}
-                    </Badge>
-                    <span className="font-mono text-xs font-bold text-amber-300">
-                      +{currentRound.activeChallenge.card.coinsReward} Coins
-                    </span>
-                  </div>
-
-                  <h4 className="font-bold text-white text-sm">
-                    {currentRound.activeChallenge.card.title}
-                  </h4>
-                  <p className="text-xs text-slate-300 leading-relaxed">
-                    {currentRound.activeChallenge.card.description}
-                  </p>
-
-                  <Button
-                    onClick={() => setIsChallengeModalOpen(true)}
-                    className="w-full bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs h-8 mt-2"
-                  >
-                    Open Active Challenge & Submit Proof
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center p-6 text-center space-y-3">
-                  <div className="p-3 bg-amber-500/10 rounded-full border border-amber-500/30">
-                    <Sparkles className="h-6 w-6 text-amber-400 animate-pulse" />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-white text-sm">Draw Next Challenge</h4>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      Draw 2 cards from the deck and pick your task (+15 to 120 coins).
-                    </p>
-                  </div>
-                  <Button
-                    onClick={() => setIsChallengeModalOpen(true)}
-                    disabled={isPenaltyActive || !isSeekingPhase}
-                    className="bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs px-6 h-9 shadow-lg"
-                  >
-                    Draw 2 Challenge Cards
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-          
+        {/* TAB 2: QUESTIONS */}
+        <TabsContent value="questions" className="space-y-4 mt-2">
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2"><ShieldQuestion /> Ask a Question</CardTitle>
-              <CardDescription>Get clues about the hiders' location. Hiders earn coins when questions are asked.</CardDescription>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base"><ShieldQuestion /> Ask a Question</CardTitle>
+              <CardDescription className="text-xs">Get clues about the hiders' location. Hiders earn coins when questions are asked.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="question-type">Question Type</Label>
+                <Label htmlFor="question-type" className="text-xs">Question Type</Label>
                 <Select 
                   onValueChange={(value) => {
                     const opt = QUESTION_OPTIONS.find(q => q.id === value);
@@ -507,7 +450,7 @@ function SeekerPageContent() {
                 </Select>
               </div>
               {selectedQuestionType && (
-                <p className="text-sm text-muted-foreground">{selectedQuestionType.description}</p>
+                <p className="text-xs text-muted-foreground">{selectedQuestionType.description}</p>
               )}
 
               {/* Special Thermometer Station Selectors */}
@@ -548,7 +491,7 @@ function SeekerPageContent() {
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="question-text">Your Question / Location Specifics</Label>
+                <Label htmlFor="question-text" className="text-xs">Your Question / Location Specifics</Label>
                 <Textarea 
                   id="question-text" 
                   value={questionText}
@@ -562,7 +505,7 @@ function SeekerPageContent() {
               <Button 
                 onClick={handleAskQuestion} 
                 disabled={isPenaltyActive || !selectedQuestionType || !questionText.trim() || (!!currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved')} 
-                className="flex items-center gap-2"
+                className="w-full sm:w-auto flex items-center gap-2"
               >
                 <Send className="h-4 w-4" /> Ask Question
               </Button>
@@ -570,20 +513,20 @@ function SeekerPageContent() {
           </Card>
 
           <Card>
-            <CardHeader><CardTitle>Question Log & Responses</CardTitle></CardHeader>
+            <CardHeader className="pb-3"><CardTitle className="text-base">Question Log & Responses</CardTitle></CardHeader>
             <CardContent>
               {displayedAskedQuestions.length === 0 ? (
-                <p className="text-muted-foreground">No questions asked yet.</p>
+                <p className="text-muted-foreground text-xs">No questions asked yet.</p>
               ) : (
-                <ScrollArea className="h-[300px] pr-4">
-                <ul className="space-y-4">
+                <ScrollArea className="h-[350px] pr-3">
+                <ul className="space-y-3">
                   {displayedAskedQuestions.map(q => (
-                    <li key={q.id} className="p-3 border rounded-md bg-card/80">
+                    <li key={q.id} className="p-3 border rounded-md bg-card/80 text-xs">
                       <p className="font-semibold text-primary">{q.category}: <span className="text-foreground">{q.text}</span></p>
-                      <p className="text-xs text-muted-foreground">Asked by {teams.find(t => t.id === q.askingTeamId)?.name || 'Unknown Seeker'} at: {new Date(q.timestamp).toLocaleTimeString()}</p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">Asked by {teams.find(t => t.id === q.askingTeamId)?.name || 'Unknown Seeker'} at: {new Date(q.timestamp).toLocaleTimeString()}</p>
                       {q.response && (
-                        <div className="mt-1 text-sm text-accent-foreground bg-accent/20 p-2 rounded-md">
-                          Hider Response: 
+                        <div className="mt-2 text-xs text-accent-foreground bg-accent/20 p-2 rounded-md">
+                          <strong>Hider Response:</strong> 
                           {q.category === "Photo" && typeof q.response === 'string' && q.response.startsWith('http')
                             ? <PhotoResponseDisplay imageUrl={q.response} /> 
                             : typeof q.response === 'string'
@@ -591,7 +534,7 @@ function SeekerPageContent() {
                               : "Invalid response format"} 
                         </div>
                       )}
-                      {!q.response && <p className="mt-1 text-sm text-muted-foreground italic">Awaiting response...</p>}
+                      {!q.response && <p className="mt-1 text-xs text-muted-foreground italic">Awaiting response...</p>}
                     </li>
                   ))}
                 </ul>
@@ -599,11 +542,140 @@ function SeekerPageContent() {
               )}
             </CardContent>
           </Card>
-          
-          {/* Live Chronological Match Timeline */}
-          <MatchTimeline events={currentRound?.timeline} maxHeight="450px" />
-        </>
-      )}
+        </TabsContent>
+
+        {/* TAB 3: CHALLENGES */}
+        <TabsContent value="challenges" className="space-y-4 mt-2">
+          {activeCurseDetails && currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved' && (
+            <Card className="border-destructive bg-destructive/10">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-destructive text-base">
+                  {activeCurseDetails.icon && <activeCurseDetails.icon className="h-5 w-5" />}
+                  Curse Active: {activeCurseDetails.name}
+                </CardTitle>
+                <CardDescription className="text-destructive/90 text-xs">
+                  {activeCurseDetails.description} <br />
+                  { (activeCurseDetails.requiresHiderTextInput && currentRound.activeCurse.hiderInputText) && (
+                    <span className="font-semibold">Hider's input: "{currentRound.activeCurse.hiderInputText}"</span>
+                  )}
+                  <br/>
+                  <strong>Effect on Seekers:</strong> {activeCurseDetails.effect}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {currentRound.activeCurse.resolutionStatus === 'pending_hider_acknowledgement' ? (
+                  <p className="font-semibold text-primary text-xs">Photo submitted. Awaiting hider review.</p>
+                ) : activeCurseDetails.durationMinutes && currentRound.activeCurse.startTime && currentRound.activeCurse.resolutionStatus === 'pending_seeker_action' ? (
+                  <>
+                  <TimerDisplay
+                    title="Curse Time Remaining"
+                    durationMinutes={activeCurseDetails.durationMinutes}
+                    phaseStartTime={new Date(currentRound.activeCurse.startTime)}
+                    isActive={currentRound.activeCurse.resolutionStatus === 'pending_seeker_action'}
+                    onTimerEnd={() => {
+                      toast({ title: "Curse Expired", description: `${activeCurseDetails.name} is no longer active.` });
+                      clearActiveCurse(); 
+                    }}
+                    className="text-sm"
+                  />
+                  {activeCurseDetails.number === 3 && ( // Curse of the Gambler's Feet
+                    <div className="mt-3">
+                      <Button onClick={handleRollForGamblerSteps} className="w-full flex items-center gap-2 text-xs">
+                        <Dice6 className="h-4 w-4"/> Roll for Steps
+                      </Button>
+                      {gamblerSteps !== null && (
+                        <p className="mt-2 text-center text-sm font-semibold">You can take: {gamblerSteps} step(s). Re-roll after moving.</p>
+                      )}
+                    </div>
+                  )}
+                  </>
+                ) : activeCurseDetails.requiresSeekerAction === 'confirmation' && currentRound.activeCurse.resolutionStatus === 'pending_seeker_action' ? (
+                  <Button onClick={() => seekerCompletesCurseAction()} className="w-full flex items-center gap-2 mt-2 text-xs" disabled={isCurseActionDisabled}>
+                     <CheckSquare className="h-4 w-4" /> Mark Curse Resolved
+                  </Button>
+                ) : activeCurseDetails.requiresSeekerAction === 'photo' && currentRound.activeCurse.resolutionStatus === 'pending_seeker_action' ? (
+                   <SeekerCursePhotoUpload 
+                     onPhotoSubmit={(file) => seekerCompletesCurseAction(file)}
+                     disabled={isCurseActionDisabled}
+                   />
+                ) : null }
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Jet Lag Hong Kong Challenge Deck */}
+          <Card className="border-amber-500/40 bg-gradient-to-br from-slate-900 via-slate-900 to-amber-950/20 shadow-xl overflow-hidden">
+            <CardHeader className="pb-3 border-b border-slate-800">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-amber-400" />
+                  <CardTitle className="text-base text-white">Challenge Card Deck</CardTitle>
+                </div>
+                <div className="flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/30 px-2.5 py-1 rounded-md text-xs font-mono font-bold text-amber-300">
+                  <Coins className="h-3.5 w-3.5 text-amber-400" />
+                  <span>{myTeam?.coins ?? 0} Coins</span>
+                </div>
+              </div>
+              <CardDescription className="text-xs text-slate-400">
+                Draw and complete authentic Hong Kong tasks to earn coins for asking questions.
+              </CardDescription>
+            </CardHeader>
+
+            <CardContent className="p-4">
+              {currentRound?.activeChallenge ? (
+                <div className="bg-slate-950/70 border border-amber-500/30 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <Badge className="bg-amber-600 text-white text-[10px]">
+                      ACTIVE: {currentRound.activeChallenge.card.difficulty.toUpperCase()}
+                    </Badge>
+                    <span className="font-mono text-xs font-bold text-amber-300">
+                      +{currentRound.activeChallenge.card.coinsReward} Coins
+                    </span>
+                  </div>
+
+                  <h4 className="font-bold text-white text-sm">
+                    {currentRound.activeChallenge.card.title}
+                  </h4>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    {currentRound.activeChallenge.card.description}
+                  </p>
+
+                  <Button
+                    onClick={() => setIsChallengeModalOpen(true)}
+                    className="w-full bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs h-9 mt-2"
+                  >
+                    Open Active Challenge & Submit Proof
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center p-6 text-center space-y-3">
+                  <div className="p-3 bg-amber-500/10 rounded-full border border-amber-500/30">
+                    <Sparkles className="h-6 w-6 text-amber-400 animate-pulse" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-white text-sm">Draw Next Challenge</h4>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Draw 2 cards from the deck and pick your task (+15 to 120 coins).
+                    </p>
+                  </div>
+                  <Button
+                    onClick={() => setIsChallengeModalOpen(true)}
+                    disabled={isPenaltyActive || !isSeekingPhase}
+                    className="bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs px-6 h-9 shadow-lg"
+                  >
+                    Draw 2 Challenge Cards
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* TAB 4: TIMELINE FEED */}
+        <TabsContent value="timeline" className="space-y-4 mt-2">
+          <MatchTimeline events={currentRound?.timeline} maxHeight="600px" />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
