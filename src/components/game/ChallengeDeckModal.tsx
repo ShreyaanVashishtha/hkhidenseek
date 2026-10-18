@@ -21,9 +21,11 @@ import {
   Zap,
   Coffee,
   Train,
-  Smile
+  Smile,
+  Bot
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { AIRefereeModal, AIRefereeVerdict } from './AIRefereeModal';
 
 interface ChallengeDeckModalProps {
   isOpen: boolean;
@@ -52,6 +54,7 @@ export function ChallengeDeckModal({
   const [proofPhoto, setProofPhoto] = useState<File | null>(null);
   const [proofPreviewUrl, setProofPreviewUrl] = useState<string | null>(null);
   const [showVetoConfirm, setShowVetoConfirm] = useState(false);
+  const [showAIRefereeModal, setShowAIRefereeModal] = useState(false);
 
   // When modal opens and no active challenge, automatically draw 2 cards if empty
   useEffect(() => {
@@ -81,7 +84,7 @@ export function ChallengeDeckModal({
     }
   };
 
-  const handleComplete = async () => {
+  const handleComplete = async (verdict?: AIRefereeVerdict) => {
     if (!activeChallenge) return;
     if (activeChallenge.card.requiresPhotoProof && !proofPhoto) {
       toast({
@@ -97,8 +100,8 @@ export function ChallengeDeckModal({
       await onCompleteChallenge(activeChallenge.card, proofPhoto || undefined);
       soundEffects.playCoin();
       toast({
-        title: "Challenge Completed!",
-        description: `Earned +${activeChallenge.card.coinsReward} Coins for your team!`,
+        title: verdict?.approved ? "AI Referee Approved Challenge!" : "Challenge Completed!",
+        description: verdict?.refereeCommentary || `Earned +${activeChallenge.card.coinsReward} Coins for your team!`,
       });
       setProofPhoto(null);
       setProofPreviewUrl(null);
@@ -264,14 +267,35 @@ export function ChallengeDeckModal({
                   Veto Challenge (15m Freeze)
                 </Button>
 
-                <Button
-                  onClick={handleComplete}
-                  disabled={isSubmitting || (activeChallenge.card.requiresPhotoProof && !proofPhoto)}
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-5 shadow-lg"
-                >
-                  <CheckCircle2 className="h-4 w-4 mr-1.5" />
-                  {isSubmitting ? "Submitting..." : `Complete & Claim +${activeChallenge.card.coinsReward} Coins`}
-                </Button>
+                {activeChallenge.card.requiresPhotoProof ? (
+                  <Button
+                    onClick={() => {
+                      if (!proofPhoto) {
+                        toast({
+                          title: "Photo Proof Required",
+                          description: "Please attach a photo proving you completed this challenge.",
+                          variant: "destructive",
+                        });
+                        return;
+                      }
+                      setShowAIRefereeModal(true);
+                    }}
+                    disabled={isSubmitting || !proofPhoto}
+                    className="bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs px-4 shadow-lg flex items-center gap-1.5"
+                  >
+                    <Bot className="h-4 w-4" />
+                    Verify with AI Referee (+{activeChallenge.card.coinsReward} Coins)
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={() => handleComplete()}
+                    disabled={isSubmitting}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-5 shadow-lg flex items-center gap-1.5"
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    {isSubmitting ? "Submitting..." : `Complete & Claim +${activeChallenge.card.coinsReward} Coins`}
+                  </Button>
+                )}
               </div>
             </div>
           ) : (
@@ -375,6 +399,22 @@ export function ChallengeDeckModal({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* AI Referee Verification Dialog */}
+      {activeChallenge && (
+        <AIRefereeModal
+          isOpen={showAIRefereeModal}
+          onClose={() => setShowAIRefereeModal(false)}
+          taskType="challenge_proof"
+          taskTitle={activeChallenge.card.title}
+          taskDescription={activeChallenge.card.description}
+          category={activeChallenge.card.category}
+          photoFile={proofPhoto}
+          onApproved={(verdict) => {
+            handleComplete(verdict);
+          }}
+        />
+      )}
     </>
   );
 }

@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useGameContext } from "@/hooks/useGameContext";
 import type { Player, Team } from "@/lib/types";
 import { PageHeader } from "@/components/PageHeader";
-import { ShieldCheck, Users, UserPlus, Play, StopCircle, Shuffle, Trash2, Map, Forward, ZapOff, KeyRound, LogOut, Siren, Eye, Radio } from "lucide-react";
+import { ShieldCheck, Users, UserPlus, Play, StopCircle, Shuffle, Trash2, Map, Forward, ZapOff, KeyRound, LogOut, Siren, Eye, Radio, Fingerprint, CheckCircle2 } from "lucide-react";
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -19,6 +19,7 @@ import { PinProtectPage } from '@/components/auth/PinProtectPage';
 import { MTR_STATIONS } from '@/lib/mtrData';
 import { MatchTimeline } from '@/components/game/MatchTimeline';
 import { Badge } from '@/components/ui/badge';
+import { registerAdminPasskey, hasRegisteredAdminPasskey, removeAdminPasskey, isPasskeySupported } from '@/lib/passkeyAuth';
 
 function AdminPageContent() {
   const { 
@@ -53,6 +54,43 @@ function AdminPageContent() {
   const [adminPinInput, setAdminPinInput] = useState("");
   const [hiderPinInput, setHiderPinInput] = useState("");
   const [seekerPinInput, setSeekerPinInput] = useState("");
+
+  const [passkeySupported, setPasskeySupported] = useState(false);
+  const [passkeyRegistered, setPasskeyRegistered] = useState(false);
+  const [isRegisteringPasskey, setIsRegisteringPasskey] = useState(false);
+
+  useEffect(() => {
+    isPasskeySupported().then(supported => setPasskeySupported(supported));
+    setPasskeyRegistered(hasRegisteredAdminPasskey());
+  }, []);
+
+  const handleRegisterPasskey = async () => {
+    setIsRegisteringPasskey(true);
+    const result = await registerAdminPasskey("Admin / Referee Device");
+    setIsRegisteringPasskey(false);
+    if (result.success) {
+      setPasskeyRegistered(true);
+      toast({
+        title: "Passkey Registered!",
+        description: "You can now log into the Admin panel using Touch ID / Face ID."
+      });
+    } else {
+      toast({
+        title: "Passkey Registration Failed",
+        description: result.error || "Could not register biometric passkey.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleRemovePasskey = () => {
+    removeAdminPasskey();
+    setPasskeyRegistered(false);
+    toast({
+      title: "Passkey Removed",
+      description: "Touch ID / Face ID passkey has been removed from this device."
+    });
+  };
 
   useEffect(() => {
     setMapUrlInput(mtrMapUrl || "");
@@ -211,6 +249,65 @@ function AdminPageContent() {
              <Button variant="outline" onClick={logoutAdmin} className="flex items-center gap-2"><LogOut /> Logout Admin Session</Button>
              <Button variant="outline" onClick={logoutHider} className="flex items-center gap-2"><LogOut /> Logout Hider Session</Button>
              <Button variant="outline" onClick={logoutSeeker} className="flex items-center gap-2"><LogOut /> Logout Seeker Session</Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Biometric Passkey Authentication Management */}
+      <Card className="border-primary/20 shadow-sm">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <Fingerprint className="h-5 w-5 text-primary" /> Passkey Biometrics (Touch ID / Face ID)
+            </CardTitle>
+            <Badge variant={passkeyRegistered ? "default" : "outline"} className={passkeyRegistered ? "bg-emerald-600 hover:bg-emerald-600" : ""}>
+              {passkeyRegistered ? (
+                <span className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Configured</span>
+              ) : (
+                "Not Registered"
+              )}
+            </Badge>
+          </div>
+          <CardDescription>
+            Register your device's biometric authenticator (Apple Face ID / Touch ID, Windows Hello, Android Biometrics) to access the Admin Panel without typing PINs.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="p-3 bg-muted/40 rounded-lg text-sm space-y-1">
+            <p className="font-medium text-foreground">
+              Device Compatibility: {passkeySupported ? (
+                <span className="text-emerald-600 dark:text-emerald-400 font-semibold">✓ Supported on this browser & device</span>
+              ) : (
+                <span className="text-amber-600 font-semibold">Not detected or disabled</span>
+              )}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Passkeys are stored securely in your hardware security enclave. They cannot be phished or shared across non-approved origins.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            <Button
+              onClick={handleRegisterPasskey}
+              disabled={isRegisteringPasskey}
+              className="flex items-center gap-2 bg-primary hover:bg-primary/90"
+            >
+              <Fingerprint className="h-4 w-4" />
+              {isRegisteringPasskey
+                ? "Registering Biometric..."
+                : passkeyRegistered
+                ? "Re-register Biometric Passkey"
+                : "Register Face ID / Touch ID on this Device"}
+            </Button>
+            {passkeyRegistered && (
+              <Button
+                variant="outline"
+                onClick={handleRemovePasskey}
+                className="text-destructive hover:bg-destructive/10"
+              >
+                Remove Passkey from this Device
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>

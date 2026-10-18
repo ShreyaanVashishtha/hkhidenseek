@@ -198,6 +198,7 @@ interface GameContextType extends GameState {
   addTimelineEvent: (event: Omit<TimelineEvent, 'id' | 'timestamp'>) => void;
   
   authenticateAdmin: (enteredPin: string) => boolean;
+  authenticateAdminDirect: () => void;
   authenticateHider: (enteredPin: string) => boolean;
   authenticateSeeker: (enteredPin: string) => boolean;
   logoutAdmin: () => void;
@@ -1221,6 +1222,11 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     return false;
   }, []); 
 
+  const authenticateAdminDirect = useCallback(() => {
+    setIsAdminAuthenticated(true);
+    if (typeof window !== 'undefined') localStorage.setItem(LOCAL_STORAGE_AUTH_PREFIX + 'admin', 'true');
+  }, []);
+
   const authenticateHider = useCallback((enteredPin: string): boolean => {
     const effectiveHiderPin = gameStateRef.current.hiderPin; 
     if (effectiveHiderPin && effectiveHiderPin === enteredPin) {
@@ -1306,6 +1312,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       setHiderPin,
       setSeekerPin,
       authenticateAdmin,
+      authenticateAdminDirect,
       authenticateHider,
       authenticateSeeker,
       logoutAdmin,
