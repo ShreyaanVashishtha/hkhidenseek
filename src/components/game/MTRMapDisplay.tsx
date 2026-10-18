@@ -26,8 +26,7 @@ import {
   MapPin, 
   Check, 
   X, 
-  Info,
-  Maximize2
+  Eye
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -48,32 +47,27 @@ export function MTRMapDisplay({
 }: MTRMapDisplayProps) {
   const { toast } = useToast();
 
-  // Selected station
   const [internalSelectedStationId, setInternalSelectedStationId] = useState<string | null>(null);
   const activeStationId = externalSelectedStationId ?? internalSelectedStationId;
 
-  // Active Line Filter (null = show all)
   const [activeLineId, setActiveLineId] = useState<string | null>(null);
-
-  // Search query
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   // Toggles
   const [showZones, setShowZones] = useState(true);
   const [showChineseLabels, setShowChineseLabels] = useState(true);
+  const [onlyInterchanges, setOnlyInterchanges] = useState(false);
 
-  // Pan and Zoom transform state
-  const [viewBox, setViewBox] = useState({ x: 0, y: 0, width: 1300, height: 920 });
+  // Default Spacious ViewBox (1750 x 1150)
+  const DEFAULT_VIEWBOX = useMemo(() => ({ x: 20, y: -40, width: 1720, height: 1180 }), []);
+  const [viewBox, setViewBox] = useState(DEFAULT_VIEWBOX);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
   const svgRef = useRef<SVGSVGElement | null>(null);
 
-  // Default coordinate bounds
-  const DEFAULT_VIEWBOX = useMemo(() => ({ x: 0, y: 0, width: 1300, height: 920 }), []);
-
-  // Filtered stations for search
+  // Autocomplete search
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return [];
     const q = searchQuery.toLowerCase().trim();
@@ -84,29 +78,27 @@ export function MTRMapDisplay({
     ).slice(0, 8);
   }, [searchQuery]);
 
-  // Handle station selection
   const handleSelectStation = useCallback((station: MTRStation) => {
     setInternalSelectedStationId(station.id);
     onSelectStation?.(station);
 
-    // Smoothly pan towards the station
+    // Smoothly pan & focus towards the station
     setViewBox(prev => {
-      const targetWidth = Math.min(prev.width, 700);
-      const targetHeight = Math.min(prev.height, 500);
+      const targetWidth = Math.min(prev.width, 850);
+      const targetHeight = Math.min(prev.height, 580);
       return {
-        x: Math.max(0, Math.min(1300 - targetWidth, station.x - targetWidth / 2)),
-        y: Math.max(0, Math.min(920 - targetHeight, station.y - targetHeight / 2)),
+        x: Math.max(-50, Math.min(1850 - targetWidth, station.x - targetWidth / 2)),
+        y: Math.max(-60, Math.min(1250 - targetHeight, station.y - targetHeight / 2)),
         width: targetWidth,
         height: targetHeight,
       };
     });
   }, [onSelectStation]);
 
-  // Zoom handlers
   const handleZoom = (factor: number) => {
     setViewBox(prev => {
-      const newWidth = Math.max(350, Math.min(1600, prev.width * factor));
-      const newHeight = Math.max(250, Math.min(1150, prev.height * factor));
+      const newWidth = Math.max(450, Math.min(2200, prev.width * factor));
+      const newHeight = Math.max(300, Math.min(1500, prev.height * factor));
       const dx = (newWidth - prev.width) / 2;
       const dy = (newHeight - prev.height) / 2;
       return {
@@ -124,9 +116,9 @@ export function MTRMapDisplay({
     setSearchQuery("");
   };
 
-  // Mouse / Touch Drag handlers for panning
+  // Drag Panning
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button !== 0) return; // Only left click
+    if (e.button !== 0) return;
     setIsDragging(true);
     setDragStart({ x: e.clientX, y: e.clientY });
   };
@@ -152,7 +144,6 @@ export function MTRMapDisplay({
     setIsDragging(false);
   };
 
-  // Wheel zoom
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
     const zoomFactor = e.deltaY < 0 ? 0.9 : 1.1;
@@ -174,10 +165,48 @@ export function MTRMapDisplay({
     }, "");
   };
 
+  // Helper for computing station label transform & text anchor
+  const getLabelProps = (station: MTRStation) => {
+    const { labelPlacement, labelDx = 0, labelDy = 0 } = station;
+    
+    switch (labelPlacement) {
+      case 'angle-top-right':
+        return {
+          transform: `translate(${station.x + 8 + labelDx}, ${station.y - 8 + labelDy}) rotate(-40)`,
+          textAnchor: 'start' as const,
+        };
+      case 'left':
+        return {
+          transform: `translate(${station.x - 12 + labelDx}, ${station.y + 4 + labelDy})`,
+          textAnchor: 'end' as const,
+        };
+      case 'right':
+        return {
+          transform: `translate(${station.x + 12 + labelDx}, ${station.y + 4 + labelDy})`,
+          textAnchor: 'start' as const,
+        };
+      case 'top':
+        return {
+          transform: `translate(${station.x + labelDx}, ${station.y - 12 + labelDy})`,
+          textAnchor: 'middle' as const,
+        };
+      case 'bottom':
+        return {
+          transform: `translate(${station.x + labelDx}, ${station.y + 16 + labelDy})`,
+          textAnchor: 'middle' as const,
+        };
+      default:
+        return {
+          transform: `translate(${station.x + 12}, ${station.y + 4})`,
+          textAnchor: 'start' as const,
+        };
+    }
+  };
+
   return (
-    <Card className="w-full bg-slate-950 text-slate-100 border-slate-800 shadow-2xl overflow-hidden relative">
+    <Card className="w-full bg-[#080d19] text-slate-100 border-slate-800 shadow-2xl overflow-hidden relative">
       {!hideTitleBar && (
-        <CardHeader className="p-4 border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md">
+        <CardHeader className="p-4 border-b border-slate-800 bg-[#0c1324]/80 backdrop-blur-md">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
               <div className="p-2 rounded-lg bg-sky-500/10 text-sky-400 border border-sky-500/20">
@@ -185,22 +214,22 @@ export function MTRMapDisplay({
               </div>
               <div>
                 <CardTitle className="text-base font-semibold tracking-wide flex items-center gap-2 text-white">
-                  Hong Kong MTR Interactive Transit Radar
-                  <Badge variant="outline" className="text-xs font-mono bg-sky-950/50 text-sky-300 border-sky-700/50">
-                    Live System
+                  Hong Kong MTR System Map
+                  <Badge variant="outline" className="text-xs font-mono bg-sky-950/60 text-sky-300 border-sky-700/50">
+                    Official Schematic
                   </Badge>
                 </CardTitle>
                 <CardDescription className="text-xs text-slate-400">
-                  {role === 'hider' ? 'Explore stations & pick your 500m hiding zone' :
-                   role === 'seeker' ? 'Track lines, estimate distances & plan radar questions' :
-                   'Full schematic transit network with 500m station zones'}
+                  {role === 'hider' ? 'Pick your 500m station zone • Clean official octolinear layout' :
+                   role === 'seeker' ? 'Click stations to target radar clues • Filter transit corridors' :
+                   'Clean, spacious schematic transit network with non-overlapping station labels'}
                 </CardDescription>
               </div>
             </div>
 
             {/* Zone & Label Toggles */}
-            <div className="flex items-center gap-4 text-xs">
-              <div className="flex items-center gap-2 bg-slate-800/60 px-2.5 py-1.5 rounded-md border border-slate-700/50">
+            <div className="flex flex-wrap items-center gap-3 text-xs">
+              <div className="flex items-center gap-2 bg-slate-900/80 px-2.5 py-1.5 rounded-md border border-slate-800">
                 <Switch 
                   id="show-zones" 
                   checked={showZones} 
@@ -213,7 +242,7 @@ export function MTRMapDisplay({
                 </Label>
               </div>
 
-              <div className="flex items-center gap-2 bg-slate-800/60 px-2.5 py-1.5 rounded-md border border-slate-700/50">
+              <div className="flex items-center gap-2 bg-slate-900/80 px-2.5 py-1.5 rounded-md border border-slate-800">
                 <Switch 
                   id="show-zh" 
                   checked={showChineseLabels} 
@@ -224,11 +253,23 @@ export function MTRMapDisplay({
                   中文
                 </Label>
               </div>
+
+              <div className="flex items-center gap-2 bg-slate-900/80 px-2.5 py-1.5 rounded-md border border-slate-800">
+                <Switch 
+                  id="only-interchanges" 
+                  checked={onlyInterchanges} 
+                  onCheckedChange={setOnlyInterchanges} 
+                  className="data-[state=checked]:bg-sky-500 h-4 w-7"
+                />
+                <Label htmlFor="only-interchanges" className="cursor-pointer text-slate-300">
+                  Interchanges Only
+                </Label>
+              </div>
             </div>
           </div>
 
-          {/* Quick Line Filter Bar */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pt-2 pb-1 scrollbar-thin scrollbar-thumb-slate-800">
+          {/* Line Filter Bar */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pt-2.5 pb-1 scrollbar-thin scrollbar-thumb-slate-800">
             <Button
               size="sm"
               variant={activeLineId === null ? "default" : "outline"}
@@ -236,7 +277,7 @@ export function MTRMapDisplay({
               className={`h-7 px-2.5 text-xs rounded-full border transition-all ${
                 activeLineId === null 
                   ? 'bg-sky-600 hover:bg-sky-500 text-white border-sky-400 shadow-sm' 
-                  : 'bg-slate-900/80 hover:bg-slate-800 text-slate-400 border-slate-800'
+                  : 'bg-slate-900 hover:bg-slate-800 text-slate-400 border-slate-800'
               }`}
             >
               All Lines
@@ -250,7 +291,7 @@ export function MTRMapDisplay({
                   className={`h-7 px-2.5 text-xs rounded-full font-medium flex items-center gap-1.5 whitespace-nowrap transition-all border ${
                     isActive 
                       ? 'text-white shadow-md' 
-                      : 'text-slate-400 hover:text-slate-200 border-slate-800 bg-slate-900/60'
+                      : 'text-slate-400 hover:text-slate-200 border-slate-800/80 bg-slate-900/60'
                   }`}
                   style={{
                     borderColor: isActive ? line.color : undefined,
@@ -270,13 +311,13 @@ export function MTRMapDisplay({
       )}
 
       {/* Main Map Viewport */}
-      <div className="relative w-full h-[520px] sm:h-[620px] bg-[#070b14] overflow-hidden select-none">
-        {/* Subtle coordinate grid overlay */}
+      <div className="relative w-full h-[580px] sm:h-[680px] bg-[#070b14] overflow-hidden select-none">
+        {/* Subtle grid */}
         <div 
-          className="absolute inset-0 opacity-15 pointer-events-none"
+          className="absolute inset-0 opacity-10 pointer-events-none"
           style={{
             backgroundImage: `radial-gradient(circle at 1px 1px, #38bdf8 1px, transparent 0)`,
-            backgroundSize: '32px 32px',
+            backgroundSize: '40px 40px',
           }}
         />
 
@@ -286,14 +327,14 @@ export function MTRMapDisplay({
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
             <Input
               type="text"
-              placeholder="Search station (e.g., Admiralty, 金鐘)..."
+              placeholder="Search station (e.g. Admiralty, Central, 旺角)..."
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);
                 setIsSearchOpen(true);
               }}
               onFocus={() => setIsSearchOpen(true)}
-              className="pl-9 pr-8 h-9 text-xs bg-slate-900/90 border-slate-700/80 text-white placeholder:text-slate-500 rounded-lg shadow-lg backdrop-blur-md focus:border-sky-500"
+              className="pl-9 pr-8 h-9 text-xs bg-slate-900/90 border-slate-700/80 text-white placeholder:text-slate-500 rounded-lg shadow-xl backdrop-blur-md focus:border-sky-500"
             />
             {searchQuery && (
               <button 
@@ -336,7 +377,6 @@ export function MTRMapDisplay({
                         key={lineId}
                         className="w-2.5 h-2.5 rounded-full"
                         style={{ backgroundColor: MTR_LINES[lineId]?.color || '#888' }}
-                        title={MTR_LINES[lineId]?.name}
                       />
                     ))}
                   </div>
@@ -391,43 +431,47 @@ export function MTRMapDisplay({
           style={{ touchAction: 'none' }}
         >
           <defs>
-            {/* Glow Filter for Active Stations */}
-            <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur" />
+            <filter id="activeGlow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="blur" />
               <feMerge>
                 <feMergeNode in="blur" />
                 <feMergeNode in="SourceGraphic" />
               </feMerge>
             </filter>
 
-            {/* Radar Pulsing Animation */}
-            <radialGradient id="hidingZoneGradient">
-              <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.35" />
-              <stop offset="70%" stopColor="#0284c7" stopOpacity="0.15" />
+            <radialGradient id="hidingZonePulse">
+              <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.4" />
+              <stop offset="60%" stopColor="#0284c7" stopOpacity="0.15" />
               <stop offset="100%" stopColor="#0369a1" stopOpacity="0.0" />
             </radialGradient>
           </defs>
 
-          {/* District & Region Water / Land Outlines (Schematic styling) */}
-          <g id="regions" opacity="0.4" pointerEvents="none">
-            {/* Victoria Harbour Channel Watermark */}
-            <text x="640" y="665" fill="#1e293b" fontSize="22" fontWeight="bold" letterSpacing="6" opacity="0.4">
-              VICTORIA HARBOUR 維多利亞港
-            </text>
-            <text x="590" y="80" fill="#1e293b" fontSize="24" fontWeight="bold" letterSpacing="6" opacity="0.3">
+          {/* Clean Water Channel - Victoria Harbour */}
+          <path
+            d="M 120 860 Q 600 850 850 820 T 1700 890 L 1700 900 Q 850 850 120 870 Z"
+            fill="#0f1f38"
+            opacity="0.4"
+          />
+
+          {/* Subtle Region Watermarks */}
+          <g id="region-labels" opacity="0.25" pointerEvents="none" className="select-none font-bold">
+            <text x="800" y="-30" fill="#334155" fontSize="26" letterSpacing="10" textAnchor="middle">
               NEW TERRITORIES 新界
             </text>
-            <text x="730" y="490" fill="#1e293b" fontSize="24" fontWeight="bold" letterSpacing="6" opacity="0.3">
+            <text x="1100" y="420" fill="#334155" fontSize="24" letterSpacing="10" textAnchor="middle">
               KOWLOON 九龍
             </text>
-            <text x="640" y="780" fill="#1e293b" fontSize="24" fontWeight="bold" letterSpacing="6" opacity="0.3">
+            <text x="950" y="865" fill="#38bdf8" fontSize="18" letterSpacing="8" textAnchor="middle">
+              VICTORIA HARBOUR 維多利亞港
+            </text>
+            <text x="950" y="990" fill="#334155" fontSize="24" letterSpacing="10" textAnchor="middle">
               HONG KONG ISLAND 香港島
             </text>
           </g>
 
-          {/* 500m Hiding Zones (Rendered below tracks) */}
+          {/* 500m Hiding Territory Rings */}
           {showZones && (
-            <g id="hiding-zones" opacity="0.7">
+            <g id="hiding-zones" opacity="0.75">
               {Object.values(MTR_STATIONS).map(st => {
                 const isSelected = activeStationId === st.id;
                 const isLineActive = !activeLineId || st.lines.includes(activeLineId);
@@ -440,22 +484,22 @@ export function MTRMapDisplay({
                     <circle
                       cx={st.x}
                       cy={st.y}
-                      r={isSelected ? 38 : 28}
-                      fill={isSelected ? "url(#hidingZoneGradient)" : "none"}
-                      stroke={isSelected ? "#38bdf8" : isHighlighted ? "#f59e0b" : "#334155"}
+                      r={isSelected ? 45 : 32}
+                      fill={isSelected ? "url(#hidingZonePulse)" : "none"}
+                      stroke={isSelected ? "#38bdf8" : isHighlighted ? "#f59e0b" : "#1e293b"}
                       strokeWidth={isSelected ? "2" : "1"}
                       strokeDasharray={isSelected ? "none" : "3,3"}
-                      opacity={isSelected ? 1 : isHighlighted ? 0.9 : 0.45}
+                      opacity={isSelected ? 1 : isHighlighted ? 0.9 : 0.6}
                     />
                     {isSelected && (
                       <circle
                         cx={st.x}
                         cy={st.y}
-                        r={44}
+                        r={52}
                         fill="none"
                         stroke="#38bdf8"
                         strokeWidth="1.5"
-                        opacity="0.5"
+                        opacity="0.6"
                         strokeDasharray="4,4"
                         className="animate-spin"
                         style={{ transformOrigin: `${st.x}px ${st.y}px`, animationDuration: '10s' }}
@@ -474,22 +518,22 @@ export function MTRMapDisplay({
               const pathD = getLinePath(line);
 
               return (
-                <g key={`track-${line.id}`} opacity={isActive ? 1 : 0.15} className="transition-opacity duration-300">
-                  {/* Track Casing */}
+                <g key={`track-${line.id}`} opacity={isActive ? 1 : 0.12} className="transition-opacity duration-300">
+                  {/* Track Casing (Dark outline for high contrast) */}
                   <path
                     d={pathD}
                     fill="none"
                     stroke="#020617"
-                    strokeWidth="10"
+                    strokeWidth="11"
                     strokeLinecap="round"
                     strokeLinejoin="round"
                   />
-                  {/* Core Colored Track */}
+                  {/* Main Line Track */}
                   <path
                     d={pathD}
                     fill="none"
                     stroke={line.color}
-                    strokeWidth="6"
+                    strokeWidth="7"
                     strokeLinecap="round"
                     strokeLinejoin="round"
                   />
@@ -498,15 +542,28 @@ export function MTRMapDisplay({
             })}
           </g>
 
-          {/* Stations & Interchange Nodes */}
-          <g id="stations">
+          {/* Central / Hong Kong Underground Walking Interchange Connector */}
+          <g id="inter-station-connectors">
+            <line
+              x1="530"
+              y1="920"
+              x2="530"
+              y2="860"
+              stroke="#64748b"
+              strokeWidth="4"
+              strokeDasharray="3,3"
+            />
+          </g>
+
+          {/* Station Nodes */}
+          <g id="station-nodes">
             {Object.values(MTR_STATIONS).map(st => {
               const isSelected = activeStationId === st.id;
               const isHighlighted = highlightStationIds.includes(st.id);
               const isLineActive = !activeLineId || st.lines.includes(activeLineId);
               const primaryLine = MTR_LINES[st.lines[0]];
 
-              const opacity = isLineActive ? 1 : 0.15;
+              const opacity = isLineActive ? 1 : 0.12;
 
               return (
                 <g
@@ -515,68 +572,101 @@ export function MTRMapDisplay({
                   className="cursor-pointer group"
                   opacity={opacity}
                 >
-                  {/* Station Hit Area */}
+                  {/* Generous Clickable Hit Area */}
                   <circle
                     cx={st.x}
                     cy={st.y}
-                    r="16"
+                    r="18"
                     fill="transparent"
                   />
 
-                  {/* Pulsing Highlight for Active Station */}
+                  {/* Pulsing Highlight */}
                   {(isSelected || isHighlighted) && (
                     <circle
                       cx={st.x}
                       cy={st.y}
                       r="18"
                       fill={isSelected ? "#38bdf8" : "#f59e0b"}
-                      opacity="0.4"
+                      opacity="0.5"
                       className="animate-ping"
                       style={{ transformOrigin: `${st.x}px ${st.y}px`, animationDuration: '2s' }}
                     />
                   )}
 
-                  {/* Outer Node Ring */}
+                  {/* Interchange Node (Official MTR style: large white ring with dark outer casing) */}
                   {st.isInterchange ? (
                     <circle
                       cx={st.x}
                       cy={st.y}
-                      r={isSelected ? "9" : "7.5"}
+                      r={isSelected ? "9.5" : "8"}
                       fill="#ffffff"
                       stroke="#0f172a"
-                      strokeWidth="3"
-                      filter={isSelected ? "url(#glow)" : undefined}
-                      className="transition-all duration-200 group-hover:scale-125"
+                      strokeWidth="3.5"
+                      filter={isSelected ? "url(#activeGlow)" : undefined}
+                      className="transition-transform duration-200 group-hover:scale-125"
                     />
                   ) : (
+                    /* Regular Station (Official MTR style: clean solid white circle with line border) */
                     <circle
                       cx={st.x}
                       cy={st.y}
                       r={isSelected ? "7" : "5"}
                       fill="#ffffff"
-                      stroke={primaryLine?.color || "#fff"}
+                      stroke={primaryLine?.color || "#ffffff"}
                       strokeWidth="2.5"
-                      className="transition-all duration-200 group-hover:scale-125"
+                      className="transition-transform duration-200 group-hover:scale-125"
                     />
                   )}
+                </g>
+              );
+            })}
+          </g>
 
-                  {/* Station Label */}
-                  <g
-                    transform={`translate(${st.x + (st.x > 900 ? -12 : 12)}, ${st.y + 4})`}
-                    className="pointer-events-none select-none transition-all"
+          {/* Station Labels (Placed with dedicated octolinear positioning to prevent collisions) */}
+          <g id="station-labels">
+            {Object.values(MTR_STATIONS).map(st => {
+              const isSelected = activeStationId === st.id;
+              const isHighlighted = highlightStationIds.includes(st.id);
+              const isLineActive = !activeLineId || st.lines.includes(activeLineId);
+
+              // If user toggles "Interchanges Only", hide regular station labels unless selected
+              if (onlyInterchanges && !st.isInterchange && !isSelected && !isHighlighted) {
+                return null;
+              }
+
+              const opacity = isLineActive ? 1 : 0.12;
+              const labelProps = getLabelProps(st);
+
+              return (
+                <g
+                  key={`label-${st.id}`}
+                  {...labelProps}
+                  opacity={opacity}
+                  pointerEvents="none"
+                  className="select-none transition-all duration-200"
+                >
+                  <text
+                    textAnchor={labelProps.textAnchor}
+                    fill={isSelected ? "#38bdf8" : isHighlighted ? "#f59e0b" : "#f8fafc"}
+                    fontSize={isSelected ? "12" : st.isInterchange ? "11" : "10"}
+                    fontWeight={isSelected || st.isInterchange ? "700" : "500"}
+                    stroke="#070b14"
+                    strokeWidth="3.5"
+                    paintOrder="stroke"
+                    strokeLinejoin="round"
                   >
-                    <text
-                      textAnchor={st.x > 900 ? "end" : "start"}
-                      fill={isSelected ? "#38bdf8" : isHighlighted ? "#f59e0b" : "#f8fafc"}
-                      fontSize={isSelected ? "13" : "10"}
-                      fontWeight={isSelected || st.isInterchange ? "bold" : "500"}
-                      stroke="#020617"
-                      strokeWidth="3"
-                      paintOrder="stroke"
-                    >
-                      {st.name} {showChineseLabels && <tspan fill="#94a3b8" fontSize="9"> {st.nameZh}</tspan>}
-                    </text>
-                  </g>
+                    {st.name}
+                    {showChineseLabels && (
+                      <tspan 
+                        fill={isSelected ? "#bae6fd" : "#94a3b8"} 
+                        fontSize="9" 
+                        fontWeight="400"
+                        dx="3"
+                      >
+                        {st.nameZh}
+                      </tspan>
+                    )}
+                  </text>
                 </g>
               );
             })}
@@ -585,7 +675,7 @@ export function MTRMapDisplay({
 
         {/* Selected Station Floating HUD Panel */}
         {selectedStation && (
-          <div className="absolute bottom-3 left-3 right-3 sm:right-auto sm:w-96 bg-slate-900/95 border border-slate-700/80 rounded-xl p-4 shadow-2xl backdrop-blur-xl z-20 transition-all animate-in fade-in slide-in-from-bottom-2">
+          <div className="absolute bottom-3 left-3 right-3 sm:right-auto sm:w-96 bg-[#0c1324]/95 border border-slate-700/80 rounded-xl p-4 shadow-2xl backdrop-blur-xl z-20 transition-all animate-in fade-in slide-in-from-bottom-2">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
@@ -597,7 +687,7 @@ export function MTRMapDisplay({
                   </span>
                   {selectedStation.isInterchange && (
                     <Badge variant="outline" className="bg-sky-950/80 text-sky-400 border-sky-600/40 text-[10px] py-0">
-                      Interchange
+                      Interchange Hub
                     </Badge>
                   )}
                 </div>
@@ -615,7 +705,7 @@ export function MTRMapDisplay({
               </button>
             </div>
 
-            {/* Station Lines */}
+            {/* Connecting Lines */}
             <div className="flex flex-wrap items-center gap-1.5 my-3">
               {selectedStation.lines.map(lineId => {
                 const line = MTR_LINES[lineId];
@@ -656,10 +746,11 @@ export function MTRMapDisplay({
                 <Button
                   size="sm"
                   onClick={() => {
+                    onSelectStation?.(selectedStation);
                     navigator.clipboard.writeText(`${selectedStation.name} Station`);
                     toast({
-                      title: "Copied for Seeker Radar!",
-                      description: `"${selectedStation.name} Station" copied to clipboard for your next Radar clue.`,
+                      title: "Targeted for Radar Clue!",
+                      description: `Added "${selectedStation.name} (${selectedStation.nameZh})" to your question prompt.`,
                     });
                   }}
                   className="w-full bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs h-8 flex items-center justify-center gap-1.5"
@@ -690,25 +781,25 @@ export function MTRMapDisplay({
         )}
       </div>
 
-      {/* Legend / Status Footer */}
-      <div className="p-3 bg-slate-900/90 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
+      {/* Legend & Help Footer */}
+      <div className="p-3 bg-[#0a0f1d] border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-full bg-white border-2 border-slate-900 inline-block" />
+            <span className="w-3.5 h-3.5 rounded-full bg-white border-2 border-slate-900 inline-block shadow-sm" />
             <span>Interchange Hub</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-sky-400 inline-block" />
-            <span>Regular Station</span>
+            <span className="w-2.5 h-2.5 rounded-full bg-white border border-sky-400 inline-block" />
+            <span>Station</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-full border border-dashed border-sky-400/80 inline-block" />
-            <span>500m Hiding Territory</span>
+            <span className="w-3.5 h-3.5 rounded-full border border-dashed border-sky-400 inline-block" />
+            <span>500m Zone</span>
           </div>
         </div>
 
         <div className="text-[11px] text-slate-500">
-          Tip: Drag to pan • Scroll to zoom • Click any station for details
+          Tip: Drag to pan • Scroll to zoom • Toggle lines to focus corridors
         </div>
       </div>
     </Card>
