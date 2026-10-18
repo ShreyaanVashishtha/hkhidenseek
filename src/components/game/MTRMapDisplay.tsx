@@ -26,9 +26,11 @@ import {
   MapPin, 
   Check, 
   X, 
-  Eye
+  Eye,
+  Globe
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { MTRGeographicMap } from './MTRGeographicMap';
 
 interface MTRMapDisplayProps {
   onSelectStation?: (station: MTRStation) => void;
@@ -46,6 +48,9 @@ export function MTRMapDisplay({
   hideTitleBar = false,
 }: MTRMapDisplayProps) {
   const { toast } = useToast();
+
+  // Mode: Schematic Subway Map vs Geographic Real HK Map
+  const [displayMode, setDisplayMode] = useState<'schematic' | 'geographic'>('schematic');
 
   const [internalSelectedStationId, setInternalSelectedStationId] = useState<string | null>(null);
   const activeStationId = externalSelectedStationId ?? internalSelectedStationId;
@@ -227,6 +232,34 @@ export function MTRMapDisplay({
               </div>
             </div>
 
+            {/* Dual-Mode Switch: Official Schematic vs Geographic HK Map */}
+            <div className="flex items-center bg-slate-900/90 p-1 rounded-lg border border-slate-700/80 shadow-md">
+              <button
+                type="button"
+                onClick={() => setDisplayMode('schematic')}
+                className={`px-3 py-1 text-xs font-semibold rounded-md flex items-center gap-1.5 transition-all ${
+                  displayMode === 'schematic'
+                    ? 'bg-sky-600 text-white shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Compass className="h-3.5 w-3.5" />
+                Transit Schematic
+              </button>
+              <button
+                type="button"
+                onClick={() => setDisplayMode('geographic')}
+                className={`px-3 py-1 text-xs font-semibold rounded-md flex items-center gap-1.5 transition-all ${
+                  displayMode === 'geographic'
+                    ? 'bg-blue-600 text-white shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Globe className="h-3.5 w-3.5" />
+                Real HK Map (GPS)
+              </button>
+            </div>
+
             {/* Zone & Label Toggles */}
             <div className="flex flex-wrap items-center gap-3 text-xs">
               <div className="flex items-center gap-2 bg-slate-900/80 px-2.5 py-1.5 rounded-md border border-slate-800">
@@ -386,50 +419,68 @@ export function MTRMapDisplay({
           )}
         </div>
 
-        {/* Floating Zoom & Reset Tools */}
-        <div className="absolute top-3 right-3 z-20 flex flex-col gap-1.5 bg-slate-900/80 p-1.5 rounded-lg border border-slate-800 shadow-xl backdrop-blur-md">
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={() => handleZoom(0.8)}
-            className="h-8 w-8 text-slate-300 hover:text-white hover:bg-slate-800"
-            title="Zoom In"
-          >
-            <ZoomIn className="h-4 w-4" />
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={() => handleZoom(1.25)}
-            className="h-8 w-8 text-slate-300 hover:text-white hover:bg-slate-800"
-            title="Zoom Out"
-          >
-            <ZoomOut className="h-4 w-4" />
-          </Button>
-          <Separator className="bg-slate-800" />
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={handleResetView}
-            className="h-8 w-8 text-slate-300 hover:text-white hover:bg-slate-800"
-            title="Reset View"
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-          </Button>
-        </div>
+        {displayMode === 'geographic' ? (
+          <MTRGeographicMap
+            onSelectStation={handleSelectStation}
+            selectedStationId={activeStationId ?? undefined}
+            role={role}
+            highlightStationIds={highlightStationIds}
+          />
+        ) : (
+          <>
+            {/* Subtle grid */}
+            <div 
+              className="absolute inset-0 opacity-10 pointer-events-none"
+              style={{
+                backgroundImage: `radial-gradient(circle at 1px 1px, #38bdf8 1px, transparent 0)`,
+                backgroundSize: '40px 40px',
+              }}
+            />
 
-        {/* SVG Interactive Canvas */}
-        <svg
-          ref={svgRef}
-          viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
-          onWheel={handleWheel}
-          className={`w-full h-full cursor-${isDragging ? 'grabbing' : 'grab'}`}
-          style={{ touchAction: 'none' }}
-        >
+            {/* Floating Zoom & Reset Tools */}
+            <div className="absolute top-3 right-3 z-20 flex flex-col gap-1.5 bg-slate-900/80 p-1.5 rounded-lg border border-slate-800 shadow-xl backdrop-blur-md">
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => handleZoom(0.8)}
+                className="h-8 w-8 text-slate-300 hover:text-white hover:bg-slate-800"
+                title="Zoom In"
+              >
+                <ZoomIn className="h-4 w-4" />
+              </Button>
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => handleZoom(1.25)}
+                className="h-8 w-8 text-slate-300 hover:text-white hover:bg-slate-800"
+                title="Zoom Out"
+              >
+                <ZoomOut className="h-4 w-4" />
+              </Button>
+              <Separator className="bg-slate-800" />
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={handleResetView}
+                className="h-8 w-8 text-slate-300 hover:text-white hover:bg-slate-800"
+                title="Reset View"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+
+            {/* SVG Interactive Canvas */}
+            <svg
+              ref={svgRef}
+              viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseUp}
+              onWheel={handleWheel}
+              className={`w-full h-full cursor-${isDragging ? 'grabbing' : 'grab'}`}
+              style={{ touchAction: 'none' }}
+            >
           <defs>
             <filter id="activeGlow" x="-50%" y="-50%" width="200%" height="200%">
               <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="blur" />
@@ -672,6 +723,8 @@ export function MTRMapDisplay({
             })}
           </g>
         </svg>
+          </>
+        )}
 
         {/* Selected Station Floating HUD Panel */}
         {selectedStation && (
@@ -794,12 +847,20 @@ export function MTRMapDisplay({
           </div>
           <div className="flex items-center gap-1.5">
             <span className="w-3.5 h-3.5 rounded-full border border-dashed border-sky-400 inline-block" />
-            <span>500m Zone</span>
+            <span>{displayMode === 'geographic' ? 'True 500m Metric Radius' : '500m Zone'}</span>
           </div>
+          {displayMode === 'geographic' && (
+            <div className="flex items-center gap-1.5 text-blue-400 font-medium">
+              <span className="w-2 h-2 rounded-full bg-blue-500 animate-ping inline-block" />
+              <span>Live GPS Satellite Tracking</span>
+            </div>
+          )}
         </div>
 
         <div className="text-[11px] text-slate-500">
-          Tip: Drag to pan • Scroll to zoom • Toggle lines to focus corridors
+          {displayMode === 'geographic'
+            ? 'Geographic view: Real-world GPS coordinates & metric distance projection'
+            : 'Tip: Drag to pan • Scroll to zoom • Toggle lines to focus corridors'}
         </div>
       </div>
     </Card>
