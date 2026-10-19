@@ -82,10 +82,12 @@ export function MTRGeographicMap({
       });
       mapInstanceRef.current = map;
 
-      // Add CartoDB Tile Layer
-      const tileUrl = mapTheme === 'dark'
+      // Add CartoDB Tile Layer (supports optional NEXT_PUBLIC_CARTO_API_KEY if configured)
+      const cartoApiKey = process.env.NEXT_PUBLIC_CARTO_API_KEY;
+      const baseTileUrl = mapTheme === 'dark'
         ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
         : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+      const tileUrl = cartoApiKey ? `${baseTileUrl}?api_key=${cartoApiKey}` : baseTileUrl;
 
       L.tileLayer(tileUrl, {
         attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
