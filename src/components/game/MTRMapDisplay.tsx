@@ -19,7 +19,8 @@ import {
   MTR_LINES, 
   MTR_STATIONS, 
   MTRStation, 
-  MTRLine 
+  MTRLine,
+  INTERCHANGE_CAPSULES 
 } from '@/lib/mtrData';
 import { 
   Map, 
@@ -39,7 +40,9 @@ import {
   Filter,
   Flame,
   Trophy,
-  Star
+  Star,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useGameContext } from '@/hooks/useGameContext';
@@ -66,8 +69,11 @@ export function MTRMapDisplay({
 }: MTRMapDisplayProps) {
   const { toast } = useToast();
 
-  // Mode: Schematic Subway Map vs Geographic Real HK Map
+  // Dual-mode: Official Schematic vs Real Geographic HK map
   const [displayMode, setDisplayMode] = useState<'schematic' | 'geographic'>('schematic');
+
+  // Theme: Official MTR Clean (as in user reference image) vs Dark Obsidian Broadcast
+  const [mapTheme, setMapTheme] = useState<'official' | 'dark'>('official');
 
   const { 
     currentRound, 
@@ -83,10 +89,10 @@ export function MTRMapDisplay({
   const totalStations = Object.keys(MTR_STATIONS).length;
   const remainingCandidatesCount = Math.max(0, totalStations - eliminatedStationIds.length);
 
-  // Region station helpers for bulk deductions
+  // Region helpers for bulk deductions
   const hkIslandStationIds = useMemo(() => {
     return Object.values(MTR_STATIONS)
-      .filter(s => ['Central & Western', 'Wan Chai', 'Eastern', 'Southern'].includes(s.district) || s.lines.includes('island') || s.lines.includes('south-island'))
+      .filter(s => ['Central & Western', 'Wan Chai', 'Eastern', 'Southern'].includes(s.district) || s.lines.includes('ISL') || s.lines.includes('SIL'))
       .map(s => s.id);
   }, []);
 
@@ -114,20 +120,33 @@ export function MTRMapDisplay({
   const [showChineseLabels, setShowChineseLabels] = useState(true);
   const [onlyInterchanges, setOnlyInterchanges] = useState(false);
 
-  // Default Spacious ViewBox (1750 x 1150)
-  const DEFAULT_VIEWBOX = useMemo(() => ({ x: 20, y: -40, width: 1720, height: 1180 }), []);
+  // Default Spacious ViewBox (1500 x 980)
+  const DEFAULT_VIEWBOX = useMemo(() => ({ x: 10, y: 10, width: 1460, height: 950 }), []);
   const [viewBox, setViewBox] = useState(DEFAULT_VIEWBOX);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-
+  const dragDistanceRef = useRef(0);
   const svgRef = useRef<SVGSVGElement | null>(null);
+
+  // Auto-focus selected station
+  useEffect(() => {
+    if (externalSelectedStationId && MTR_STATIONS[externalSelectedStationId]) {
+      const st = MTR_STATIONS[externalSelectedStationId];
+      setViewBox({
+        x: Math.max(0, st.x - 300),
+        y: Math.max(0, st.y - 200),
+        width: 600,
+        height: 400,
+      });
+    }
+  }, [externalSelectedStationId]);
 
   // Autocomplete search
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return [];
     const q = searchQuery.toLowerCase().trim();
     return Object.values(MTR_STATIONS).filter(station => 
-      station.name.toLowerCase().includes(q) || 
+      station.name.toLowerCase().includes(q) ||
       station.nameZh.includes(q) ||
       station.district.toLowerCase().includes(q)
     ).slice(0, 8);
@@ -137,13 +156,13 @@ export function MTRMapDisplay({
     setInternalSelectedStationId(station.id);
     onSelectStation?.(station);
 
-    // Smoothly pan & focus towards the station
+    // Smoothly pan towards the station
     setViewBox(prev => {
-      const targetWidth = Math.min(prev.width, 850);
-      const targetHeight = Math.min(prev.height, 580);
+      const targetWidth = Math.min(prev.width, 700);
+      const targetHeight = Math.min(prev.height, 460);
       return {
-        x: Math.max(-50, Math.min(1850 - targetWidth, station.x - targetWidth / 2)),
-        y: Math.max(-60, Math.min(1250 - targetHeight, station.y - targetHeight / 2)),
+        x: Math.max(0, Math.min(1500 - targetWidth, station.x - targetWidth / 2)),
+        y: Math.max(0, Math.min(980 - targetHeight, station.y - targetHeight / 2)),
         width: targetWidth,
         height: targetHeight,
       };
@@ -152,13 +171,13 @@ export function MTRMapDisplay({
 
   const handleZoom = (factor: number) => {
     setViewBox(prev => {
-      const newWidth = Math.max(450, Math.min(2200, prev.width * factor));
-      const newHeight = Math.max(300, Math.min(1500, prev.height * factor));
+      const newWidth = Math.max(380, Math.min(1600, prev.width * factor));
+      const newHeight = Math.max(260, Math.min(1050, prev.height * factor));
       const dx = (newWidth - prev.width) / 2;
       const dy = (newHeight - prev.height) / 2;
       return {
-        x: Math.max(-100, prev.x - dx),
-        y: Math.max(-100, prev.y - dy),
+        x: Math.max(-40, prev.x - dx),
+        y: Math.max(-40, prev.y - dy),
         width: newWidth,
         height: newHeight,
       };
@@ -170,8 +189,6 @@ export function MTRMapDisplay({
     setActiveLineId(null);
     setSearchQuery("");
   };
-
-  const dragDistanceRef = useRef(0);
 
   // Unified Pointer Drag Panning (Mobile touchscreen finger drag + Desktop mouse)
   const handlePointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
@@ -221,7 +238,7 @@ export function MTRMapDisplay({
 
   const selectedStation = activeStationId ? MTR_STATIONS[activeStationId] : null;
 
-  // Generate SVG path for a line based on its ordered station IDs
+  // Generate SVG path for an MTR line with parallel track offsets where lines share corridors
   const getLinePath = (line: MTRLine) => {
     const points = line.stationIds
       .map(id => MTR_STATIONS[id])
@@ -230,188 +247,181 @@ export function MTRMapDisplay({
     if (points.length < 2) return "";
 
     return points.reduce((path, pt, index) => {
-      return index === 0 ? `M ${pt.x} ${pt.y}` : `${path} L ${pt.x} ${pt.y}`;
+      let px = pt.x;
+      let py = pt.y;
+
+      // Slight parallel track offsets for multi-line corridors
+      if (line.id === 'TWL') {
+        if (['prince-edward', 'mong-kok', 'yau-ma-tei'].includes(pt.id)) {
+          px -= 4;
+        }
+      } else if (line.id === 'KTL') {
+        if (['prince-edward', 'mong-kok', 'yau-ma-tei'].includes(pt.id)) {
+          px += 4;
+        }
+      } else if (line.id === 'TCL') {
+        if (['hong-kong', 'kowloon', 'nam-cheong', 'lai-king', 'tsing-yi'].includes(pt.id)) {
+          px -= 3;
+          py -= 3;
+        }
+      } else if (line.id === 'AEL') {
+        if (['hong-kong', 'kowloon', 'tsing-yi'].includes(pt.id)) {
+          px += 3;
+          py += 3;
+        }
+      }
+
+      return index === 0 ? `M ${px} ${py}` : `${path} L ${px} ${py}`;
     }, "");
   };
 
-  // Helper for computing station label transform & text anchor
-  const getLabelProps = (station: MTRStation) => {
-    const { labelPlacement, labelDx = 0, labelDy = 0 } = station;
-    
-    switch (labelPlacement) {
-      case 'angle-top-right':
-        return {
-          transform: `translate(${station.x + 8 + labelDx}, ${station.y - 8 + labelDy}) rotate(-40)`,
-          textAnchor: 'start' as const,
-        };
-      case 'left':
-        return {
-          transform: `translate(${station.x - 12 + labelDx}, ${station.y + 4 + labelDy})`,
-          textAnchor: 'end' as const,
-        };
-      case 'right':
-        return {
-          transform: `translate(${station.x + 12 + labelDx}, ${station.y + 4 + labelDy})`,
-          textAnchor: 'start' as const,
-        };
-      case 'top':
-        return {
-          transform: `translate(${station.x + labelDx}, ${station.y - 12 + labelDy})`,
-          textAnchor: 'middle' as const,
-        };
-      case 'bottom':
-        return {
-          transform: `translate(${station.x + labelDx}, ${station.y + 16 + labelDy})`,
-          textAnchor: 'middle' as const,
-        };
-      default:
-        return {
-          transform: `translate(${station.x + 12}, ${station.y + 4})`,
-          textAnchor: 'start' as const,
-        };
-    }
-  };
+  // Color scheme tokens
+  const isOfficial = mapTheme === 'official';
+  const seaBg = isOfficial ? '#d2edf8' : '#070b14';
+  const landFill = isOfficial ? '#ffffff' : '#0c1527';
+  const landStroke = isOfficial ? '#9ecbe0' : '#1e293b';
+  const trackCasing = isOfficial ? '#ffffff' : '#030712';
+  const nodeFill = isOfficial ? '#ffffff' : '#0f172a';
+  const nodeStroke = isOfficial ? '#1e293b' : '#38bdf8';
+  const haloColor = isOfficial ? '#ffffff' : '#070b14';
 
   return (
-    <Card className="w-full bg-[#080d19] text-slate-100 border-slate-800 shadow-2xl overflow-hidden relative">
+    <Card className={`w-full border-border shadow-2xl overflow-hidden relative ${isOfficial ? 'bg-[#f8fafc] text-slate-900' : 'bg-[#070b14] text-slate-100'}`}>
       {!hideTitleBar && (
-        <CardHeader className="p-4 border-b border-slate-800 bg-[#0c1324]/80 backdrop-blur-md">
+        <CardHeader className={`p-4 border-b ${isOfficial ? 'bg-white/95 border-slate-200 text-slate-900' : 'bg-[#0c1324]/90 border-slate-800 text-white'} backdrop-blur-md`}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-lg bg-sky-500/10 text-sky-400 border border-sky-500/20">
+              <div className={`p-2 rounded-xl border ${isOfficial ? 'bg-sky-50 text-sky-600 border-sky-200' : 'bg-sky-500/10 text-sky-400 border-sky-500/20'}`}>
                 <Compass className="h-5 w-5 animate-pulse" />
               </div>
               <div>
-                <CardTitle className="text-base font-semibold tracking-wide flex items-center gap-2 text-white">
-                  Hong Kong MTR System Map
-                  <Badge variant="outline" className="text-xs font-mono bg-sky-950/60 text-sky-300 border-sky-700/50">
-                    Official Schematic
+                <CardTitle className="text-base font-bold tracking-tight flex items-center gap-2">
+                  <span>港鐵路綫網絡圖</span>
+                  <span className="font-normal text-xs text-muted-foreground font-mono">MTR Official Schematic</span>
+                  <Badge variant="outline" className={`text-[10px] font-mono ${isOfficial ? 'bg-sky-100 text-sky-800 border-sky-300' : 'bg-sky-950/60 text-sky-300 border-sky-700/50'}`}>
+                    Verified Network
                   </Badge>
                 </CardTitle>
-                <CardDescription className="text-xs text-slate-400">
-                  {role === 'hider' ? 'Pick your 500m station zone • Clean official octolinear layout' :
-                   role === 'seeker' ? 'Click stations to target radar clues • Filter transit corridors' :
-                   'Clean, spacious schematic transit network with non-overlapping station labels'}
+                <CardDescription className="text-xs text-muted-foreground">
+                  {role === 'hider' ? 'Pick your 500m station zone • Authentic bilingual MTR layout' :
+                   role === 'seeker' ? 'Tap stations to inspect, eliminate, or click Target for Clues' :
+                   'Clean, spacious official transit layout with stacked bilingual Chinese/English labels'}
                 </CardDescription>
               </div>
             </div>
 
-            {/* Dual-Mode Switch: Official Schematic vs Geographic HK Map */}
-            <div className="flex items-center bg-slate-900/90 p-1 rounded-lg border border-slate-700/80 shadow-md">
-              <button
-                type="button"
-                onClick={() => setDisplayMode('schematic')}
-                className={`px-3 py-1 text-xs font-semibold rounded-md flex items-center gap-1.5 transition-all ${
-                  displayMode === 'schematic'
-                    ? 'bg-sky-600 text-white shadow'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <Compass className="h-3.5 w-3.5" />
-                Transit Schematic
-              </button>
-              <button
-                type="button"
-                onClick={() => setDisplayMode('geographic')}
-                className={`px-3 py-1 text-xs font-semibold rounded-md flex items-center gap-1.5 transition-all ${
-                  displayMode === 'geographic'
-                    ? 'bg-blue-600 text-white shadow'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <Globe className="h-3.5 w-3.5" />
-                Real HK Map (GPS)
-              </button>
-            </div>
-
-            {/* Zone & Label Toggles */}
-            <div className="flex flex-wrap items-center gap-3 text-xs">
-              <div className="flex items-center gap-2 bg-slate-900/80 px-2.5 py-1.5 rounded-md border border-slate-800">
-                <Switch 
-                  id="show-zones" 
-                  checked={showZones} 
-                  onCheckedChange={setShowZones} 
-                  className="data-[state=checked]:bg-sky-500 h-4 w-7"
-                />
-                <Label htmlFor="show-zones" className="cursor-pointer text-slate-300 flex items-center gap-1">
-                  <Shield className="h-3.5 w-3.5 text-sky-400" />
-                  500m Zones
-                </Label>
+            {/* Mode & Theme Controls */}
+            <div className="flex items-center flex-wrap gap-2">
+              {/* Theme Toggle: Official MTR Clean vs Dark Obsidian */}
+              <div className={`flex items-center p-0.5 rounded-lg border shadow-xs ${isOfficial ? 'bg-slate-100 border-slate-300' : 'bg-slate-900 border-slate-700'}`}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setMapTheme('official');
+                  }}
+                  className={`px-2.5 py-1 text-xs font-semibold rounded-md flex items-center gap-1.5 transition-all ${
+                    isOfficial
+                      ? 'bg-white text-sky-700 shadow-sm border border-slate-200'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                  title="Official MTR Clean (White land, cyan sea as in reference)"
+                >
+                  <Sun className="h-3.5 w-3.5 text-amber-500" />
+                  MTR Clean
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setMapTheme('dark');
+                  }}
+                  className={`px-2.5 py-1 text-xs font-semibold rounded-md flex items-center gap-1.5 transition-all ${
+                    !isOfficial
+                      ? 'bg-slate-800 text-sky-300 shadow-sm border border-slate-700'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  title="Broadcast Obsidian Dark Theme"
+                >
+                  <Moon className="h-3.5 w-3.5 text-sky-400" />
+                  Obsidian
+                </button>
               </div>
 
-              <div className="flex items-center gap-2 bg-slate-900/80 px-2.5 py-1.5 rounded-md border border-slate-800">
-                <Switch 
-                  id="show-zh" 
-                  checked={showChineseLabels} 
-                  onCheckedChange={setShowChineseLabels} 
-                  className="data-[state=checked]:bg-sky-500 h-4 w-7"
-                />
-                <Label htmlFor="show-zh" className="cursor-pointer text-slate-300">
-                  中文
-                </Label>
+              {/* Dual-Mode Switch: Official Schematic vs Geographic HK Map */}
+              <div className={`flex items-center p-0.5 rounded-lg border shadow-xs ${isOfficial ? 'bg-slate-100 border-slate-300' : 'bg-slate-900 border-slate-700'}`}>
+                <button
+                  type="button"
+                  onClick={() => setDisplayMode('schematic')}
+                  className={`px-3 py-1 text-xs font-semibold rounded-md flex items-center gap-1.5 transition-all ${
+                    displayMode === 'schematic'
+                      ? 'bg-sky-600 text-white shadow-sm'
+                      : isOfficial ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Compass className="h-3.5 w-3.5" />
+                  Schematic
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDisplayMode('geographic')}
+                  className={`px-3 py-1 text-xs font-semibold rounded-md flex items-center gap-1.5 transition-all ${
+                    displayMode === 'geographic'
+                      ? 'bg-sky-600 text-white shadow-sm'
+                      : isOfficial ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Globe className="h-3.5 w-3.5" />
+                  Real HK Map
+                </button>
               </div>
 
-              <div className="flex items-center gap-2 bg-slate-900/80 px-2.5 py-1.5 rounded-md border border-slate-800">
-                <Switch 
-                  id="only-interchanges" 
-                  checked={onlyInterchanges} 
-                  onCheckedChange={setOnlyInterchanges} 
-                  className="data-[state=checked]:bg-sky-500 h-4 w-7"
-                />
-                <Label htmlFor="only-interchanges" className="cursor-pointer text-slate-300">
-                  Interchanges Only
-                </Label>
-              </div>
-
-              {/* Deduction Scratchpad Counter & Quick Actions */}
+              {/* Bulk Deductions Dropdown */}
               {role === 'seeker' && (
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="bg-sky-950/80 text-sky-300 border-sky-500/40 text-xs flex items-center gap-1.5 font-mono h-7 px-2.5">
-                    <Target className="h-3.5 w-3.5 text-sky-400" />
-                    <span>{remainingCandidatesCount} / {totalStations} Candidates</span>
-                  </Badge>
-
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button size="sm" variant="outline" className="h-7 px-2.5 text-xs border-slate-700 bg-slate-900/80 text-slate-300 hover:text-white">
-                        <Filter className="h-3.5 w-3.5 mr-1 text-slate-400" />
-                        Deductions
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent className="bg-[#0b1324] border-slate-700 text-white text-xs z-50">
-                      <DropdownMenuItem onClick={() => eliminateStationsBulk(hkIslandStationIds, 'eliminate')} className="hover:bg-slate-800 cursor-pointer">
-                        Eliminate Hong Kong Island ({hkIslandStationIds.length} stns)
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => eliminateStationsBulk(kowloonStationIds, 'eliminate')} className="hover:bg-slate-800 cursor-pointer">
-                        Eliminate Kowloon ({kowloonStationIds.length} stns)
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => eliminateStationsBulk(ntStationIds, 'eliminate')} className="hover:bg-slate-800 cursor-pointer">
-                        Eliminate New Territories ({ntStationIds.length} stns)
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator className="bg-slate-800" />
-                      <DropdownMenuItem onClick={resetEliminations} className="text-rose-400 hover:bg-rose-950/50 cursor-pointer">
-                        Reset All Eliminations
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="h-8 text-xs font-semibold gap-1.5 rounded-lg"
+                    >
+                      <Filter className="h-3.5 w-3.5" />
+                      Bulk Eliminate
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56 text-xs">
+                    <DropdownMenuItem onClick={() => eliminateStationsBulk(hkIslandStationIds, 'eliminate')} className="cursor-pointer">
+                      Eliminate HK Island ({hkIslandStationIds.length} stns)
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => eliminateStationsBulk(kowloonStationIds, 'eliminate')} className="cursor-pointer">
+                      Eliminate Kowloon ({kowloonStationIds.length} stns)
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => eliminateStationsBulk(ntStationIds, 'eliminate')} className="cursor-pointer">
+                      Eliminate New Territories ({ntStationIds.length} stns)
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={resetEliminations} className="text-rose-600 dark:text-rose-400 cursor-pointer">
+                      Reset All Eliminations
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
             </div>
           </div>
 
           {/* Line Filter Bar */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pt-2.5 pb-1 scrollbar-thin scrollbar-thumb-slate-800">
+          <div className="flex items-center gap-1.5 overflow-x-auto pt-2.5 pb-1 scrollbar-thin">
             <Button
               size="sm"
               variant={activeLineId === null ? "default" : "outline"}
               onClick={() => setActiveLineId(null)}
               className={`h-7 px-2.5 text-xs rounded-full border transition-all ${
                 activeLineId === null 
-                  ? 'bg-sky-600 hover:bg-sky-500 text-white border-sky-400 shadow-sm' 
-                  : 'bg-slate-900 hover:bg-slate-800 text-slate-400 border-slate-800'
+                  ? 'bg-sky-600 hover:bg-sky-500 text-white border-sky-400 shadow-xs' 
+                  : 'bg-transparent text-muted-foreground'
               }`}
             >
-              All Lines
+              All Lines 全部路綫
             </Button>
             {Object.values(MTR_LINES).map(line => {
               const isActive = activeLineId === line.id;
@@ -421,19 +431,19 @@ export function MTRMapDisplay({
                   onClick={() => setActiveLineId(isActive ? null : line.id)}
                   className={`h-7 px-2.5 text-xs rounded-full font-medium flex items-center gap-1.5 whitespace-nowrap transition-all border ${
                     isActive 
-                      ? 'text-white shadow-md' 
-                      : 'text-slate-400 hover:text-slate-200 border-slate-800/80 bg-slate-900/60'
+                      ? 'text-white shadow-xs' 
+                      : 'text-muted-foreground hover:text-foreground bg-transparent'
                   }`}
                   style={{
                     borderColor: isActive ? line.color : undefined,
-                    backgroundColor: isActive ? `${line.color}33` : undefined,
+                    backgroundColor: isActive ? line.color : undefined,
                   }}
                 >
                   <span 
-                    className="w-2.5 h-2.5 rounded-full ring-1 ring-white/20" 
-                    style={{ backgroundColor: line.color }} 
+                    className="w-2.5 h-2.5 rounded-full ring-1 ring-white/30" 
+                    style={{ backgroundColor: isActive ? '#ffffff' : line.color }} 
                   />
-                  <span>{line.name}</span>
+                  <span>{line.nameZh} {line.name}</span>
                 </button>
               );
             })}
@@ -441,36 +451,27 @@ export function MTRMapDisplay({
         </CardHeader>
       )}
 
-      {/* Main Map Viewport */}
-      <div className="relative w-full h-[580px] sm:h-[680px] bg-[#070b14] overflow-hidden select-none">
-        {/* Subtle grid */}
-        <div 
-          className="absolute inset-0 opacity-10 pointer-events-none"
-          style={{
-            backgroundImage: `radial-gradient(circle at 1px 1px, #38bdf8 1px, transparent 0)`,
-            backgroundSize: '40px 40px',
-          }}
-        />
-
-        {/* Floating Search Bar */}
+      {/* Main Interactive Map Canvas */}
+      <CardContent className="p-0 relative h-[650px] sm:h-[720px] select-none overflow-hidden">
+        {/* Floating Quick Search Bar */}
         <div className="absolute top-3 left-3 z-20 w-64 sm:w-80">
           <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               type="text"
-              placeholder="Search station (e.g. Admiralty, Central, 旺角)..."
+              placeholder="Search station (e.g. Central, 中環)..."
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);
                 setIsSearchOpen(true);
               }}
               onFocus={() => setIsSearchOpen(true)}
-              className="pl-9 pr-8 h-9 text-xs bg-slate-900/90 border-slate-700/80 text-white placeholder:text-slate-500 rounded-lg shadow-xl backdrop-blur-md focus:border-sky-500"
+              className="pl-9 pr-8 h-9 text-xs bg-background/95 border-border shadow-lg backdrop-blur-md rounded-xl"
             />
             {searchQuery && (
               <button 
                 onClick={() => { setSearchQuery(""); setIsSearchOpen(false); }}
-                className="absolute right-2.5 top-2.5 text-slate-400 hover:text-white"
+                className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -479,7 +480,7 @@ export function MTRMapDisplay({
 
           {/* Autocomplete Dropdown */}
           {isSearchOpen && searchResults.length > 0 && (
-            <div className="absolute top-10 left-0 right-0 bg-slate-900/95 border border-slate-700 rounded-lg shadow-2xl p-1.5 backdrop-blur-lg z-30 max-h-60 overflow-y-auto">
+            <div className="absolute top-10 left-0 right-0 bg-background/95 border border-border rounded-xl shadow-2xl p-1.5 backdrop-blur-lg z-30 max-h-60 overflow-y-auto">
               {searchResults.map(station => (
                 <div
                   key={station.id}
@@ -488,19 +489,19 @@ export function MTRMapDisplay({
                     setIsSearchOpen(false);
                     setSearchQuery(station.name);
                   }}
-                  className="px-3 py-2 hover:bg-sky-950/60 rounded-md cursor-pointer flex items-center justify-between transition-colors text-xs"
+                  className="px-3 py-2 hover:bg-sky-500/15 rounded-lg cursor-pointer flex items-center justify-between transition-colors text-xs"
                 >
                   <div>
-                    <div className="font-semibold text-white flex items-center gap-1.5">
-                      <span>{station.name}</span>
-                      <span className="text-slate-400 font-normal">{station.nameZh}</span>
+                    <div className="font-bold flex items-center gap-1.5">
+                      <span>{station.nameZh}</span>
+                      <span className="text-muted-foreground font-normal">{station.name}</span>
                       {station.isInterchange && (
-                        <Badge className="h-4 px-1 text-[9px] bg-slate-800 text-sky-400 border border-sky-500/30">
+                        <Badge variant="outline" className="h-4 px-1 text-[9px]">
                           Interchange
                         </Badge>
                       )}
                     </div>
-                    <div className="text-[10px] text-slate-400">{station.district}</div>
+                    <div className="text-[10px] text-muted-foreground">{station.district}</div>
                   </div>
                   <div className="flex gap-1">
                     {station.lines.map(lineId => (
@@ -527,22 +528,13 @@ export function MTRMapDisplay({
           />
         ) : (
           <>
-            {/* Subtle grid */}
-            <div 
-              className="absolute inset-0 opacity-10 pointer-events-none"
-              style={{
-                backgroundImage: `radial-gradient(circle at 1px 1px, #38bdf8 1px, transparent 0)`,
-                backgroundSize: '40px 40px',
-              }}
-            />
-
-            {/* Floating Zoom & Reset Tools */}
-            <div className="absolute top-3 right-3 z-20 flex flex-col gap-1.5 bg-slate-900/80 p-1.5 rounded-lg border border-slate-800 shadow-xl backdrop-blur-md">
+            {/* Floating Zoom & Controls Tool Palette */}
+            <div className="absolute top-3 right-3 z-20 flex flex-col gap-1.5 bg-background/90 p-1.5 rounded-xl border border-border shadow-xl backdrop-blur-md">
               <Button
                 size="icon"
                 variant="ghost"
                 onClick={() => handleZoom(0.8)}
-                className="h-8 w-8 text-slate-300 hover:text-white hover:bg-slate-800"
+                className="h-8 w-8 text-foreground hover:bg-muted"
                 title="Zoom In"
               >
                 <ZoomIn className="h-4 w-4" />
@@ -551,17 +543,17 @@ export function MTRMapDisplay({
                 size="icon"
                 variant="ghost"
                 onClick={() => handleZoom(1.25)}
-                className="h-8 w-8 text-slate-300 hover:text-white hover:bg-slate-800"
+                className="h-8 w-8 text-foreground hover:bg-muted"
                 title="Zoom Out"
               >
                 <ZoomOut className="h-4 w-4" />
               </Button>
-              <Separator className="bg-slate-800" />
+              <Separator />
               <Button
                 size="icon"
                 variant="ghost"
                 onClick={handleResetView}
-                className="h-8 w-8 text-slate-300 hover:text-white hover:bg-slate-800"
+                className="h-8 w-8 text-foreground hover:bg-muted"
                 title="Reset View"
               >
                 <RotateCcw className="h-3.5 w-3.5" />
@@ -578,296 +570,468 @@ export function MTRMapDisplay({
               onPointerCancel={handlePointerUp}
               onWheel={handleWheel}
               className={`w-full h-full cursor-${isDragging ? 'grabbing' : 'grab'}`}
-              style={{ touchAction: 'none' }}
+              style={{ 
+                touchAction: 'none',
+                backgroundColor: seaBg,
+                transition: 'background-color 0.3s ease'
+              }}
             >
-          <defs>
-            <filter id="activeGlow" x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="blur" />
-              <feMerge>
-                <feMergeNode in="blur" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
+              <defs>
+                <filter id="activeGlow" x="-50%" y="-50%" width="200%" height="200%">
+                  <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur" />
+                  <feMerge>
+                    <feMergeNode in="blur" />
+                    <feMergeNode in="SourceGraphic" />
+                  </feMerge>
+                </filter>
 
-            <radialGradient id="hidingZonePulse">
-              <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.4" />
-              <stop offset="60%" stopColor="#0284c7" stopOpacity="0.15" />
-              <stop offset="100%" stopColor="#0369a1" stopOpacity="0.0" />
-            </radialGradient>
-          </defs>
+                <radialGradient id="hidingZonePulse">
+                  <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.4" />
+                  <stop offset="60%" stopColor="#0284c7" stopOpacity="0.15" />
+                  <stop offset="100%" stopColor="#0369a1" stopOpacity="0.0" />
+                </radialGradient>
+              </defs>
 
-          {/* Clean Water Channel - Victoria Harbour */}
-          <path
-            d="M 120 860 Q 600 850 850 820 T 1700 890 L 1700 900 Q 850 850 120 870 Z"
-            fill="#0f1f38"
-            opacity="0.4"
-          />
+              {/* 1. AUTHENTIC VECTOR LANDMASSES (White landmasses with subtle maritime borders) */}
+              <g id="landmasses" className="transition-all duration-300">
+                {/* New Territories & Kowloon (North Mainland) */}
+                <path
+                  d="M 380 15 
+                     L 1420 15 
+                     L 1420 460 
+                     Q 1360 460 1300 520 
+                     Q 1260 620 1190 660 
+                     L 1170 710 
+                     Q 1090 710 1050 650 
+                     Q 1010 610 970 610 
+                     Q 930 610 890 650 
+                     Q 820 670 740 650 
+                     L 630 650 
+                     Q 560 650 520 590 
+                     L 460 470 
+                     Q 420 370 380 310 
+                     L 310 270 
+                     Q 240 280 190 310 
+                     L 130 310 
+                     Q 60 310 50 250 
+                     L 50 150 
+                     Q 50 70 130 30 
+                     L 380 15 Z"
+                  fill={landFill}
+                  stroke={landStroke}
+                  strokeWidth="1.5"
+                />
 
-          {/* Subtle Region Watermarks */}
-          <g id="region-labels" opacity="0.25" pointerEvents="none" className="select-none font-bold">
-            <text x="800" y="-30" fill="#334155" fontSize="26" letterSpacing="10" textAnchor="middle">
-              NEW TERRITORIES 新界
-            </text>
-            <text x="1100" y="420" fill="#334155" fontSize="24" letterSpacing="10" textAnchor="middle">
-              KOWLOON 九龍
-            </text>
-            <text x="950" y="865" fill="#38bdf8" fontSize="18" letterSpacing="8" textAnchor="middle">
-              VICTORIA HARBOUR 維多利亞港
-            </text>
-            <text x="950" y="990" fill="#334155" fontSize="24" letterSpacing="10" textAnchor="middle">
-              HONG KONG ISLAND 香港島
-            </text>
-          </g>
+                {/* Hong Kong Island (South Island) */}
+                <path
+                  d="M 200 730 
+                     L 1260 730 
+                     Q 1360 730 1400 790 
+                     L 1400 930 
+                     Q 1380 970 1310 970 
+                     L 1140 970 
+                     Q 940 970 810 940 
+                     L 670 940 
+                     Q 570 960 470 960 
+                     Q 350 960 350 890 
+                     Q 350 820 430 800 
+                     L 430 780 
+                     Q 250 780 200 730 Z"
+                  fill={landFill}
+                  stroke={landStroke}
+                  strokeWidth="1.5"
+                />
 
-          {/* 500m Hiding Territory Rings */}
-          {showZones && (
-            <g id="hiding-zones" opacity="0.75">
-              {Object.values(MTR_STATIONS).map(st => {
-                const isSelected = activeStationId === st.id;
-                const isLineActive = !activeLineId || st.lines.includes(activeLineId);
-                const isHighlighted = highlightStationIds.includes(st.id);
+                {/* Lantau Island (大嶼山 - Southwest Island) */}
+                <path
+                  d="M 30 430 
+                     L 260 430 
+                     Q 300 430 300 480 
+                     L 300 580 
+                     Q 280 630 190 630 
+                     L 90 630 
+                     Q 30 630 30 560 
+                     L 30 430 Z"
+                  fill={landFill}
+                  stroke={landStroke}
+                  strokeWidth="1.5"
+                />
 
-                if (!isLineActive && !isSelected && !isHighlighted) return null;
+                {/* Tsing Yi Island (青衣) */}
+                <path
+                  d="M 280 320 
+                     L 370 320 
+                     Q 390 350 370 410 
+                     L 300 410 
+                     Q 270 380 280 320 Z"
+                  fill={landFill}
+                  stroke={landStroke}
+                  strokeWidth="1.5"
+                />
+              </g>
 
-                return (
-                  <g key={`zone-${st.id}`} className="transition-all">
-                    <circle
-                      cx={st.x}
-                      cy={st.y}
-                      r={isSelected ? 45 : 32}
-                      fill={isSelected ? "url(#hidingZonePulse)" : "none"}
-                      stroke={isSelected ? "#38bdf8" : isHighlighted ? "#f59e0b" : "#1e293b"}
-                      strokeWidth={isSelected ? "2" : "1"}
-                      strokeDasharray={isSelected ? "none" : "3,3"}
-                      opacity={isSelected ? 1 : isHighlighted ? 0.9 : 0.6}
-                    />
-                    {isSelected && (
-                      <circle
-                        cx={st.x}
-                        cy={st.y}
-                        r={52}
+              {/* 2. REGION WATERMARKS & GEOGRAPHY LABELS (As in official map) */}
+              <g id="region-labels" opacity={isOfficial ? "0.35" : "0.22"} pointerEvents="none" className="select-none font-bold">
+                <text x="750" y="45" fill={isOfficial ? "#475569" : "#64748b"} fontSize="18" letterSpacing="6" textAnchor="middle">
+                  深圳 SHENZHEN
+                </text>
+                <text x="750" y="220" fill={isOfficial ? "#475569" : "#64748b"} fontSize="24" letterSpacing="10" textAnchor="middle">
+                  新界 NEW TERRITORIES
+                </text>
+                <text x="960" y="450" fill={isOfficial ? "#475569" : "#64748b"} fontSize="22" letterSpacing="10" textAnchor="middle">
+                  九龍 KOWLOON
+                </text>
+                <text x="850" y="690" fill="#0284c7" fontSize="16" letterSpacing="8" textAnchor="middle">
+                  維多利亞港 VICTORIA HARBOUR
+                </text>
+                <text x="850" y="870" fill={isOfficial ? "#475569" : "#64748b"} fontSize="22" letterSpacing="10" textAnchor="middle">
+                  香港島 HONG KONG ISLAND
+                </text>
+                <text x="170" y="600" fill={isOfficial ? "#475569" : "#64748b"} fontSize="18" letterSpacing="6" textAnchor="middle">
+                  大嶼山 LANTAU ISLAND
+                </text>
+              </g>
+
+              {/* 3. 500m HIDING TERRITORY RINGS */}
+              {showZones && (
+                <g id="hiding-zones" opacity="0.8">
+                  {Object.values(MTR_STATIONS).map(st => {
+                    const isSelected = activeStationId === st.id;
+                    const isLineActive = !activeLineId || st.lines.includes(activeLineId);
+                    const isHighlighted = highlightStationIds.includes(st.id);
+
+                    if (!isLineActive && !isSelected && !isHighlighted) return null;
+
+                    return (
+                      <g key={`zone-${st.id}`} className="transition-all">
+                        <circle
+                          cx={st.x}
+                          cy={st.y}
+                          r={isSelected ? 42 : 28}
+                          fill={isSelected ? "url(#hidingZonePulse)" : "none"}
+                          stroke={isSelected ? "#0284c7" : isHighlighted ? "#f59e0b" : (isOfficial ? "#cbd5e1" : "#1e293b")}
+                          strokeWidth={isSelected ? "2.5" : "1"}
+                          strokeDasharray={isSelected ? "none" : "3,3"}
+                          opacity={isSelected ? 1 : isHighlighted ? 0.9 : 0.6}
+                        />
+                      </g>
+                    );
+                  })}
+                </g>
+              )}
+
+              {/* 4. DOUBLE-CASED MTR RAIL TRACKS (Clean, thick, rounded geometry) */}
+              <g id="tracks">
+                {Object.values(MTR_LINES).map(line => {
+                  const isActive = !activeLineId || activeLineId === line.id;
+                  const pathD = getLinePath(line);
+
+                  return (
+                    <g key={`track-${line.id}`} opacity={isActive ? 1 : 0.15} className="transition-opacity duration-300">
+                      {/* Track Outer Casing (Clean white outline for crisp contrast) */}
+                      <path
+                        d={pathD}
                         fill="none"
-                        stroke="#38bdf8"
-                        strokeWidth="1.5"
-                        opacity="0.6"
-                        strokeDasharray="4,4"
-                        className="animate-spin"
-                        style={{ transformOrigin: `${st.x}px ${st.y}px`, animationDuration: '10s' }}
+                        stroke={trackCasing}
+                        strokeWidth="10"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
                       />
-                    )}
-                  </g>
-                );
-              })}
-            </g>
-          )}
-
-          {/* Rail Tracks */}
-          <g id="tracks">
-            {Object.values(MTR_LINES).map(line => {
-              const isActive = !activeLineId || activeLineId === line.id;
-              const pathD = getLinePath(line);
-
-              return (
-                <g key={`track-${line.id}`} opacity={isActive ? 1 : 0.12} className="transition-opacity duration-300">
-                  {/* Track Casing (Dark outline for high contrast) */}
-                  <path
-                    d={pathD}
-                    fill="none"
-                    stroke="#020617"
-                    strokeWidth="11"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                  {/* Main Line Track */}
-                  <path
-                    d={pathD}
-                    fill="none"
-                    stroke={line.color}
-                    strokeWidth="7"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </g>
-              );
-            })}
-          </g>
-
-          {/* Central / Hong Kong Underground Walking Interchange Connector */}
-          <g id="inter-station-connectors">
-            <line
-              x1="530"
-              y1="920"
-              x2="530"
-              y2="860"
-              stroke="#64748b"
-              strokeWidth="4"
-              strokeDasharray="3,3"
-            />
-          </g>
-
-          {/* Station Nodes */}
-          <g id="station-nodes">
-            {Object.values(MTR_STATIONS).map(st => {
-              const isSelected = activeStationId === st.id;
-              const isHighlighted = highlightStationIds.includes(st.id);
-              const isLineActive = !activeLineId || st.lines.includes(activeLineId);
-              const isEliminated = eliminatedStationIds.includes(st.id);
-              const isSuspect = suspectStationIds.includes(st.id);
-              const primaryLine = MTR_LINES[st.lines[0]];
-
-              const opacity = isEliminated ? 0.22 : (isLineActive ? 1 : 0.12);
-
-              return (
-                <g
-                  key={`node-${st.id}`}
-                  onClick={() => {
-                    if (dragDistanceRef.current > 8) return;
-                    handleSelectStation(st);
-                  }}
-                  className="cursor-pointer group"
-                  opacity={opacity}
-                >
-                  {/* Generous Clickable Hit Area */}
-                  <circle
-                    cx={st.x}
-                    cy={st.y}
-                    r="18"
-                    fill="transparent"
-                  />
-
-                  {/* Pulsing Highlight */}
-                  {(isSelected || isHighlighted) && (
-                    <circle
-                      cx={st.x}
-                      cy={st.y}
-                      r="18"
-                      fill={isSelected ? "#38bdf8" : "#f59e0b"}
-                      opacity="0.5"
-                      className="animate-ping"
-                      style={{ transformOrigin: `${st.x}px ${st.y}px`, animationDuration: '2s' }}
-                    />
-                  )}
-
-                  {/* Top Suspect Golden Dashed Ring */}
-                  {isSuspect && !isEliminated && (
-                    <circle
-                      cx={st.x}
-                      cy={st.y}
-                      r="14"
-                      fill="none"
-                      stroke="#f59e0b"
-                      strokeWidth="2.5"
-                      strokeDasharray="4,2"
-                    />
-                  )}
-
-                  {/* Interchange Node (Official MTR style: large white ring with dark outer casing) */}
-                  {st.isInterchange ? (
-                    <circle
-                      cx={st.x}
-                      cy={st.y}
-                      r={isSelected ? "9.5" : "8"}
-                      fill={isEliminated ? "#334155" : (isSuspect ? "#fef3c7" : "#ffffff")}
-                      stroke={isSuspect ? "#f59e0b" : "#0f172a"}
-                      strokeWidth="3.5"
-                      filter={isSelected ? "url(#activeGlow)" : undefined}
-                      className="transition-transform duration-200 group-hover:scale-125"
-                    />
-                  ) : (
-                    /* Regular Station (Official MTR style: clean solid white circle with line border) */
-                    <circle
-                      cx={st.x}
-                      cy={st.y}
-                      r={isSelected ? "7" : "5"}
-                      fill={isEliminated ? "#334155" : (isSuspect ? "#fef3c7" : "#ffffff")}
-                      stroke={isEliminated ? "#64748b" : (isSuspect ? "#f59e0b" : (primaryLine?.color || "#ffffff"))}
-                      strokeWidth="2.5"
-                      className="transition-transform duration-200 group-hover:scale-125"
-                    />
-                  )}
-
-                  {/* Elimination Red Cross Indicator */}
-                  {isEliminated && (
-                    <g stroke="#ef4444" strokeWidth="2.5" opacity="0.9">
-                      <line x1={st.x - 5} y1={st.y - 5} x2={st.x + 5} y2={st.y + 5} />
-                      <line x1={st.x - 5} y1={st.y + 5} x2={st.x + 5} y2={st.y - 5} />
+                      {/* Vibrant Line Track Core */}
+                      <path
+                        d={pathD}
+                        fill="none"
+                        stroke={line.color}
+                        strokeWidth="6"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
                     </g>
-                  )}
-                </g>
-              );
-            })}
-          </g>
+                  );
+                })}
+              </g>
 
-          {/* Station Labels (Placed with dedicated octolinear positioning to prevent collisions) */}
-          <g id="station-labels">
-            {Object.values(MTR_STATIONS).map(st => {
-              const isSelected = activeStationId === st.id;
-              const isHighlighted = highlightStationIds.includes(st.id);
-              const isLineActive = !activeLineId || st.lines.includes(activeLineId);
-              const isEliminated = eliminatedStationIds.includes(st.id);
+              {/* Central <-> Hong Kong Pedestrian Walking Connector */}
+              <g id="walking-connectors">
+                <line
+                  x1="505"
+                  y1="750"
+                  x2="505"
+                  y2="690"
+                  stroke={isOfficial ? "#475569" : "#94a3b8"}
+                  strokeWidth="4"
+                  strokeDasharray="3,3"
+                />
+              </g>
 
-              // If user toggles "Interchanges Only", hide regular station labels unless selected
-              if (onlyInterchanges && !st.isInterchange && !isSelected && !isHighlighted) {
-                return null;
-              }
+              {/* 5. AUTHENTIC INTERCHANGE CAPSULES (Stadium Pills as in reference image) */}
+              <g id="interchange-capsules">
+                {INTERCHANGE_CAPSULES.map(cap => (
+                  <rect
+                    key={cap.id}
+                    x={cap.x}
+                    y={cap.y}
+                    width={cap.width}
+                    height={cap.height}
+                    rx={cap.rx}
+                    ry={cap.rx}
+                    fill={nodeFill}
+                    stroke={isOfficial ? "#0f172a" : "#f8fafc"}
+                    strokeWidth="2.5"
+                    className="shadow-sm"
+                  />
+                ))}
+              </g>
 
-              const opacity = isEliminated ? 0.25 : (isLineActive ? 1 : 0.12);
-              const labelProps = getLabelProps(st);
+              {/* 6. REGULAR STATION NODES */}
+              <g id="station-nodes">
+                {Object.values(MTR_STATIONS).map(st => {
+                  const isSelected = activeStationId === st.id;
+                  const isHighlighted = highlightStationIds.includes(st.id);
+                  const isLineActive = !activeLineId || st.lines.includes(activeLineId);
+                  const isEliminated = eliminatedStationIds.includes(st.id);
+                  const isSuspect = suspectStationIds.includes(st.id);
+                  const primaryLine = MTR_LINES[st.lines[0]];
 
-              return (
-                <g
-                  key={`label-${st.id}`}
-                  {...labelProps}
-                  opacity={opacity}
-                  pointerEvents="none"
-                  className="select-none transition-all duration-200"
-                >
-                  <text
-                    textAnchor={labelProps.textAnchor}
-                    fill={isEliminated ? "#64748b" : (isSelected ? "#38bdf8" : isHighlighted ? "#f59e0b" : "#f8fafc")}
-                    fontSize={isSelected ? "12" : st.isInterchange ? "11" : "10"}
-                    fontWeight={isSelected || st.isInterchange ? "700" : "500"}
-                    stroke="#070b14"
-                    strokeWidth="3.5"
-                    paintOrder="stroke"
-                    strokeLinejoin="round"
-                    textDecoration={isEliminated ? "line-through" : undefined}
-                  >
-                    {st.name}
-                    {showChineseLabels && (
-                      <tspan 
-                        fill={isSelected ? "#bae6fd" : "#94a3b8"} 
-                        fontSize="9" 
-                        fontWeight="400"
-                        dx="3"
+                  const opacity = isEliminated ? 0.25 : (isLineActive ? 1 : 0.15);
+
+                  return (
+                    <g
+                      key={`node-${st.id}`}
+                      onClick={() => {
+                        if (dragDistanceRef.current > 8) return;
+                        handleSelectStation(st);
+                      }}
+                      className="cursor-pointer group"
+                      opacity={opacity}
+                    >
+                      {/* Hit Area */}
+                      <circle cx={st.x} cy={st.y} r="16" fill="transparent" />
+
+                      {/* Selection Radiant Ring */}
+                      {(isSelected || isHighlighted) && (
+                        <circle
+                          cx={st.x}
+                          cy={st.y}
+                          r="16"
+                          fill={isSelected ? "#38bdf8" : "#f59e0b"}
+                          opacity="0.45"
+                          className="animate-ping"
+                          style={{ transformOrigin: `${st.x}px ${st.y}px`, animationDuration: '2s' }}
+                        />
+                      )}
+
+                      {/* Suspect Ring */}
+                      {isSuspect && !isEliminated && (
+                        <circle
+                          cx={st.x}
+                          cy={st.y}
+                          r="12"
+                          fill="none"
+                          stroke="#f59e0b"
+                          strokeWidth="2.5"
+                          strokeDasharray="4,2"
+                        />
+                      )}
+
+                      {/* Regular Station Circle (Interchanges are covered by capsules) */}
+                      {!st.isInterchange && (
+                        <circle
+                          cx={st.x}
+                          cy={st.y}
+                          r={isSelected ? "6.5" : "4.5"}
+                          fill={isEliminated ? "#94a3b8" : "#ffffff"}
+                          stroke={isEliminated ? "#64748b" : (isSuspect ? "#f59e0b" : "#0f172a")}
+                          strokeWidth={isSelected ? "2.5" : "2"}
+                          className="transition-transform duration-200 group-hover:scale-125"
+                        />
+                      )}
+
+                      {/* Elimination Red Cross */}
+                      {isEliminated && (
+                        <g stroke="#ef4444" strokeWidth="2.5">
+                          <line x1={st.x - 5} y1={st.y - 5} x2={st.x + 5} y2={st.y + 5} />
+                          <line x1={st.x - 5} y1={st.y + 5} x2={st.x + 5} y2={st.y - 5} />
+                        </g>
+                      )}
+                    </g>
+                  );
+                })}
+              </g>
+
+              {/* 7. CLEAN BILINGUAL STACKED LABELS (Chinese on top, English below) */}
+              <g id="station-labels">
+                {Object.values(MTR_STATIONS).map(st => {
+                  const isSelected = activeStationId === st.id;
+                  const isHighlighted = highlightStationIds.includes(st.id);
+                  const isLineActive = !activeLineId || st.lines.includes(activeLineId);
+                  const isEliminated = eliminatedStationIds.includes(st.id);
+
+                  if (onlyInterchanges && !st.isInterchange && !isSelected && !isHighlighted) {
+                    return null;
+                  }
+
+                  const { labelPlacement, labelDx = 0, labelDy = 0 } = st;
+                  let textAnchor: 'start' | 'middle' | 'end' = 'middle';
+                  let tx = st.x + labelDx;
+                  let ty = st.y + labelDy;
+
+                  switch (labelPlacement) {
+                    case 'top':
+                      textAnchor = 'middle';
+                      ty = st.y - 12 + labelDy;
+                      break;
+                    case 'bottom':
+                      textAnchor = 'middle';
+                      ty = st.y + 18 + labelDy;
+                      break;
+                    case 'left':
+                      textAnchor = 'end';
+                      tx = st.x - 14 + labelDx;
+                      ty = st.y + 3 + labelDy;
+                      break;
+                    case 'right':
+                      textAnchor = 'start';
+                      tx = st.x + 14 + labelDx;
+                      ty = st.y + 3 + labelDy;
+                      break;
+                    default:
+                      textAnchor = 'start';
+                      tx = st.x + 12 + labelDx;
+                      ty = st.y + 3 + labelDy;
+                      break;
+                  }
+
+                  const primaryTextColor = isEliminated 
+                    ? (isOfficial ? '#94a3b8' : '#475569') 
+                    : isSelected 
+                      ? '#0284c7' 
+                      : isHighlighted 
+                        ? '#d97706' 
+                        : (isOfficial ? '#0f172a' : '#f8fafc');
+
+                  const secondaryTextColor = isEliminated
+                    ? (isOfficial ? '#cbd5e1' : '#334155')
+                    : isSelected
+                      ? '#0369a1'
+                      : isHighlighted
+                        ? '#b45309'
+                        : (isOfficial ? '#475569' : '#94a3b8');
+
+                  return (
+                    <g
+                      key={`label-${st.id}`}
+                      transform={`translate(${tx}, ${ty})`}
+                      opacity={isEliminated ? 0.35 : (isLineActive ? 1 : 0.15)}
+                      pointerEvents="none"
+                      className="select-none transition-all duration-200"
+                    >
+                      <text
+                        textAnchor={textAnchor}
+                        stroke={haloColor}
+                        strokeWidth="3.5"
+                        paintOrder="stroke"
+                        strokeLinejoin="round"
                       >
-                        {st.nameZh}
-                      </tspan>
-                    )}
-                  </text>
+                        {showChineseLabels && (
+                          <tspan
+                            x="0"
+                            dy="0"
+                            fontSize="10.5"
+                            fontWeight="700"
+                            fill={primaryTextColor}
+                          >
+                            {st.nameZh}
+                          </tspan>
+                        )}
+                        <tspan
+                          x="0"
+                          dy={showChineseLabels ? "12" : "0"}
+                          fontSize="8.5"
+                          fontWeight="500"
+                          fill={secondaryTextColor}
+                        >
+                          {st.name}
+                        </tspan>
+                      </text>
+                    </g>
+                  );
+                })}
+              </g>
+
+              {/* 8. AUTHENTIC MTR SYSTEM MAP LEGEND BOX (Directly matching the reference image) */}
+              <g id="mtr-legend" transform="translate(35, 755)" pointerEvents="none" className="select-none">
+                <rect
+                  x="0"
+                  y="0"
+                  width="180"
+                  height="175"
+                  rx="10"
+                  ry="10"
+                  fill={isOfficial ? "#ffffff" : "#0c1527"}
+                  stroke={isOfficial ? "#a2d2e8" : "#1e293b"}
+                  strokeWidth="1.5"
+                  opacity="0.95"
+                  className="shadow-lg"
+                />
+
+                <text x="12" y="20" fill={isOfficial ? "#0f172a" : "#f8fafc"} fontSize="11" fontWeight="700">
+                  港鐵路綫圖 MTR System Map
+                </text>
+
+                {/* 10 Lines Grid */}
+                <g transform="translate(12, 32)">
+                  {/* Left Column (5 lines) */}
+                  <g transform="translate(0, 0)">
+                    <rect x="0" y="0" width="12" height="4" rx="2" fill="#00888A" />
+                    <text x="16" y="5" fill={isOfficial ? "#334155" : "#94a3b8"} fontSize="8">機場快綫 Airport Express</text>
+
+                    <rect x="0" y="14" width="12" height="4" rx="2" fill="#F38B00" />
+                    <text x="16" y="19" fill={isOfficial ? "#334155" : "#94a3b8"} fontSize="8">東涌綫 Tung Chung Line</text>
+
+                    <rect x="0" y="28" width="12" height="4" rx="2" fill="#F173AC" />
+                    <text x="16" y="33" fill={isOfficial ? "#334155" : "#94a3b8"} fontSize="8">迪士尼綫 Disneyland Line</text>
+
+                    <rect x="0" y="42" width="12" height="4" rx="2" fill="#53B7E8" />
+                    <text x="16" y="47" fill={isOfficial ? "#334155" : "#94a3b8"} fontSize="8">東鐵綫 East Rail Line</text>
+
+                    <rect x="0" y="56" width="12" height="4" rx="2" fill="#007DC5" />
+                    <text x="16" y="61" fill={isOfficial ? "#334155" : "#94a3b8"} fontSize="8">港島綫 Island Line</text>
+
+                    <rect x="0" y="70" width="12" height="4" rx="2" fill="#00AB4E" />
+                    <text x="16" y="75" fill={isOfficial ? "#334155" : "#94a3b8"} fontSize="8">觀塘綫 Kwun Tong Line</text>
+
+                    <rect x="0" y="84" width="12" height="4" rx="2" fill="#BAC429" />
+                    <text x="16" y="89" fill={isOfficial ? "#334155" : "#94a3b8"} fontSize="8">南港島綫 South Island Line</text>
+
+                    <rect x="0" y="98" width="12" height="4" rx="2" fill="#7D499D" />
+                    <text x="16" y="103" fill={isOfficial ? "#334155" : "#94a3b8"} fontSize="8">將軍澳綫 Tseung Kwan O Line</text>
+
+                    <rect x="0" y="112" width="12" height="4" rx="2" fill="#923011" />
+                    <text x="16" y="117" fill={isOfficial ? "#334155" : "#94a3b8"} fontSize="8">屯馬綫 Tuen Ma Line</text>
+
+                    <rect x="0" y="126" width="12" height="4" rx="2" fill="#E2231A" />
+                    <text x="16" y="131" fill={isOfficial ? "#334155" : "#94a3b8"} fontSize="8">荃灣綫 Tsuen Wan Line</text>
+                  </g>
                 </g>
-              );
-            })}
-          </g>
-        </svg>
+              </g>
+            </svg>
           </>
         )}
 
         {/* Selected Station Floating HUD Panel */}
         {selectedStation && (
-          <div className="absolute bottom-2 left-2 right-2 sm:right-auto sm:w-96 bg-[#0c1324]/95 border border-slate-700/80 rounded-2xl p-3.5 shadow-2xl backdrop-blur-xl z-30 transition-all animate-in fade-in slide-in-from-bottom-2">
+          <div className={`absolute bottom-3 left-3 right-3 sm:right-auto sm:w-96 rounded-2xl p-4 shadow-2xl backdrop-blur-xl z-30 transition-all border ${isOfficial ? 'bg-white/95 border-slate-300 text-slate-900' : 'bg-[#0c1324]/95 border-slate-700/80 text-white'}`}>
             <div className="flex items-start justify-between gap-2">
               <div className="space-y-1">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <h3 className="font-bold text-white text-base leading-tight">
-                    {selectedStation.name}
+                <div className="flex items-center gap-2">
+                  <h3 className="font-black text-base tracking-tight">
+                    <span>{selectedStation.nameZh}</span>
+                    <span className="text-sm font-normal text-muted-foreground ml-1.5">{selectedStation.name}</span>
                   </h3>
-                  <span className="text-slate-400 text-sm font-normal">
-                    {selectedStation.nameZh}
-                  </span>
                   {selectedStation.isInterchange && (
-                    <Badge variant="outline" className="bg-sky-950/80 text-sky-400 border-sky-600/40 text-[9px] py-0 px-1.5">
-                      Interchange
+                    <Badge variant="outline" className="text-[9px] py-0 px-1.5 font-bold">
+                      轉綫 Interchange
                     </Badge>
                   )}
                   {eliminatedStationIds.includes(selectedStation.id) ? (
@@ -875,19 +1039,19 @@ export function MTRMapDisplay({
                       Eliminated
                     </Badge>
                   ) : suspectStationIds.includes(selectedStation.id) ? (
-                    <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-[9px] py-0 px-1.5 font-bold flex items-center gap-1">
-                      <Star className="h-2.5 w-2.5 fill-amber-400 text-amber-400" />
+                    <Badge className="bg-amber-500/20 text-amber-500 border-amber-500/40 text-[9px] py-0 px-1.5 font-bold flex items-center gap-1">
+                      <Star className="h-2.5 w-2.5 fill-amber-500" />
                       Top Suspect
                     </Badge>
                   ) : (
-                    <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-[9px] py-0 px-1.5">
+                    <Badge variant="outline" className="text-[9px] py-0 px-1.5">
                       Candidate ({remainingCandidatesCount}/{totalStations})
                     </Badge>
                   )}
                 </div>
-                <p className="text-[11px] text-slate-400 flex items-center gap-1">
-                  <MapPin className="h-3 w-3 text-slate-500 shrink-0" />
-                  <span>{selectedStation.district} District • 500m Safe Zone</span>
+                <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+                  <MapPin className="h-3 w-3 shrink-0" />
+                  <span>{selectedStation.district} District • 500m Safe Zone Territory</span>
                 </p>
               </div>
 
@@ -896,7 +1060,7 @@ export function MTRMapDisplay({
                   triggerHaptic('light');
                   setInternalSelectedStationId(null);
                 }}
-                className="text-slate-400 hover:text-white p-1 rounded-md hover:bg-slate-800"
+                className="text-muted-foreground hover:text-foreground p-1 rounded-md"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -910,18 +1074,18 @@ export function MTRMapDisplay({
                 return (
                   <Badge
                     key={lineId}
-                    style={{ backgroundColor: `${line.color}25`, borderColor: line.color, color: '#fff' }}
-                    className="border text-[11px] px-2 py-0.5 flex items-center gap-1.5 font-medium"
+                    style={{ backgroundColor: `${line.color}25`, borderColor: line.color, color: line.color }}
+                    className="border text-[11px] px-2 py-0.5 flex items-center gap-1.5 font-bold"
                   >
                     <span className="w-2 h-2 rounded-full" style={{ backgroundColor: line.color }} />
-                    {line.name} ({line.nameZh})
+                    {line.nameZh} {line.name}
                   </Badge>
                 );
               })}
             </div>
 
             {/* Action buttons based on Role */}
-            <div className="flex flex-col gap-2 pt-2 border-t border-slate-800/80">
+            <div className="flex flex-col gap-2 pt-2 border-t border-border">
               {role === 'hider' && (
                 <Button
                   size="sm"
@@ -932,13 +1096,13 @@ export function MTRMapDisplay({
                     lockHiderStation(selectedStation.id);
                     toast({
                       title: "Hiding Zone Locked In! 🛡️",
-                      description: `Your 500m territory is anchored at ${selectedStation.name} (${selectedStation.nameZh}). Seekers cannot see your location!`,
+                      description: `Your 500m safe zone territory is anchored at ${selectedStation.nameZh} (${selectedStation.name}). Seekers cannot see your location!`,
                     });
                   }}
                   className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs h-9 flex items-center justify-center gap-1.5 shadow-md rounded-xl"
                 >
                   <Shield className="h-4 w-4" />
-                  Lock In As My Safe Zone
+                  Lock In As My Safe Zone (鎖定為安全區)
                 </Button>
               )}
 
@@ -953,11 +1117,11 @@ export function MTRMapDisplay({
                         navigator.clipboard.writeText(`${selectedStation.name} Station`);
                       } catch {}
                       toast({
-                        title: `Targeted ${selectedStation.name}!`,
+                        title: `Targeted ${selectedStation.nameZh} (${selectedStation.name})!`,
                         description: `Station filled into your question. Switched to Questions tab.`,
                       });
                     }}
-                    className="w-full bg-sky-600 hover:bg-sky-500 text-white font-semibold text-[11px] h-9 flex items-center justify-center gap-1 rounded-xl px-1"
+                    className="w-full bg-sky-600 hover:bg-sky-500 text-white font-bold text-[11px] h-9 flex items-center justify-center gap-1 rounded-xl px-1"
                   >
                     <Compass className="h-3 w-3" />
                     Target
@@ -972,11 +1136,11 @@ export function MTRMapDisplay({
                     }}
                     className={`w-full text-[11px] h-9 font-semibold flex items-center justify-center gap-1 rounded-xl transition-all px-1 ${
                       suspectStationIds.includes(selectedStation.id)
-                        ? 'border-amber-500 bg-amber-500/20 text-amber-300 hover:bg-amber-500/30'
-                        : 'border-slate-700 bg-slate-900/60 text-slate-300 hover:bg-slate-800'
+                        ? 'border-amber-500 bg-amber-500/20 text-amber-500 hover:bg-amber-500/30 font-bold'
+                        : 'border-border bg-card hover:bg-muted text-muted-foreground'
                     }`}
                   >
-                    <Star className={`h-3 w-3 ${suspectStationIds.includes(selectedStation.id) ? 'fill-amber-400 text-amber-400' : ''}`} />
+                    <Star className={`h-3 w-3 ${suspectStationIds.includes(selectedStation.id) ? 'fill-amber-500 text-amber-500' : ''}`} />
                     {suspectStationIds.includes(selectedStation.id) ? 'Suspect' : 'Suspect?'}
                   </Button>
 
@@ -984,88 +1148,24 @@ export function MTRMapDisplay({
                     size="sm"
                     variant="outline"
                     onClick={() => {
-                      const isElim = eliminatedStationIds.includes(selectedStation.id);
-                      if (isElim) {
-                        triggerHaptic('success');
-                        soundEffects.playTick();
-                      } else {
-                        triggerHaptic('eliminate');
-                        soundEffects.playTick();
-                      }
+                      triggerHaptic('warning');
                       toggleEliminateStation(selectedStation.id);
                     }}
                     className={`w-full text-[11px] h-9 font-semibold flex items-center justify-center gap-1 rounded-xl transition-all px-1 ${
                       eliminatedStationIds.includes(selectedStation.id)
-                        ? 'border-emerald-600/60 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/50'
-                        : 'border-rose-600/60 bg-rose-950/40 text-rose-300 hover:bg-rose-900/50'
+                        ? 'border-rose-500 bg-rose-500/20 text-rose-500 hover:bg-rose-500/30 font-bold'
+                        : 'border-border bg-card hover:bg-muted text-muted-foreground'
                     }`}
                   >
-                    {eliminatedStationIds.includes(selectedStation.id) ? (
-                      <>
-                        <Check className="h-3 w-3 text-emerald-400" />
-                        Restore
-                      </>
-                    ) : (
-                      <>
-                        <X className="h-3 w-3 text-rose-400" />
-                        Eliminate
-                      </>
-                    )}
+                    <X className="h-3 w-3" />
+                    {eliminatedStationIds.includes(selectedStation.id) ? 'Restore' : 'Cross Off'}
                   </Button>
                 </div>
-              )}
-
-              {role === 'spectator' && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    navigator.clipboard.writeText(selectedStation.name);
-                    toast({
-                      title: "Station Name Copied",
-                      description: `${selectedStation.name} (${selectedStation.nameZh}) copied to clipboard.`,
-                    });
-                  }}
-                  className="w-full border-slate-700 bg-slate-800/80 text-slate-200 hover:bg-slate-700 text-xs h-8 rounded-xl"
-                >
-                  Copy Station Name
-                </Button>
               )}
             </div>
           </div>
         )}
-      </div>
-
-      {/* Legend & Help Footer */}
-      <div className="p-3 bg-[#0a0f1d] border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1.5">
-            <span className="w-3.5 h-3.5 rounded-full bg-white border-2 border-slate-900 inline-block shadow-sm" />
-            <span>Interchange Hub</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-white border border-sky-400 inline-block" />
-            <span>Station</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-3.5 h-3.5 rounded-full border border-dashed border-sky-400 inline-block" />
-            <span>{displayMode === 'geographic' ? 'True 500m Metric Radius' : '500m Zone'}</span>
-          </div>
-          {displayMode === 'geographic' && (
-            <div className="flex items-center gap-1.5 text-blue-400 font-medium">
-              <span className="w-2 h-2 rounded-full bg-blue-500 animate-ping inline-block" />
-              <span>Live GPS Satellite Tracking</span>
-            </div>
-          )}
-        </div>
-
-        <div className="text-[11px] text-slate-500">
-          {displayMode === 'geographic'
-            ? 'Geographic view: Real-world GPS coordinates & metric distance projection'
-            : 'Tip: Drag to pan • Scroll to zoom • Toggle lines to focus corridors'}
-        </div>
-      </div>
+      </CardContent>
     </Card>
   );
 }
