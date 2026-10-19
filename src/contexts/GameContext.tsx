@@ -11,14 +11,16 @@ import type {
   CurseRule, 
   ChallengeCard, 
   ActiveChallenge, 
-  TimelineEvent 
+  TimelineEvent,
+  BeaconPing 
 } from '@/lib/types';
 import { MTR_MAP_PLACEHOLDER_URL, INITIAL_COINS_HIDER_START, QUESTION_OPTIONS, CURSE_DICE_OPTIONS, MAX_CURSES_PER_ROUND, GAME_TITLE, CHALLENGE_PENALTY_MINUTES, HIDING_PHASE_DURATION_MINUTES, SEEKING_PHASE_DURATION_MINUTES, CURSE_DICE_COST } from '@/lib/constants';
 import React, { createContext, useState, useCallback, ReactNode, useEffect, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase, isSupabaseConfigured } from '@/lib/supabaseClient';
 import { soundEffects } from '@/lib/soundEffects';
-import { MTR_STATIONS } from '@/lib/mtrData';
+import { triggerHaptic } from '@/lib/haptics';
+import { MTR_STATIONS, MTR_LINES } from '@/lib/mtrData';
 
 const GAME_SESSION_ID = 'current_active_game';
 const LOCAL_STORAGE_AUTH_PREFIX = `${GAME_TITLE.replace(/\s+/g, '_')}_auth_status_`;
@@ -186,13 +188,17 @@ interface GameContextType extends GameState {
   soundEnabled: boolean;
   toggleSound: () => void;
   eliminatedStationIds: string[];
+  suspectStationIds: string[];
   toggleEliminateStation: (stationId: string) => void;
+  toggleSuspectStation: (stationId: string) => void;
   eliminateStationsBulk: (stationIds: string[], action: 'eliminate' | 'restore') => void;
   resetEliminations: () => void;
   acceptChallengeCard: (card: ChallengeCard) => void;
   completeChallengeCard: (card: ChallengeCard, photoFile?: File) => Promise<void>;
   vetoChallengeCard: (card: ChallengeCard) => void;
   lockHiderStation: (stationId: string) => void;
+  transmitHiderBeacon: () => void;
+  swapRolesAndStartNextRound: () => void;
   declareEndgameBreach: () => void;
   tagHider: (photoFile?: File) => Promise<void>;
   addTimelineEvent: (event: Omit<TimelineEvent, 'id' | 'timestamp'>) => void;
@@ -966,6 +972,32 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     });
   }, [setGameState]);
 
+  const toggleSuspectStation = useCallback((stationId: string) => {
+    triggerHaptic('light');
+    setGameState(prev => {
+      if (!prev.currentRound) return prev;
+      const currentSuspects = prev.currentRound.suspectStationIds || [];
+      const isSuspect = currentSuspects.includes(stationId);
+      const nextSuspects = isSuspect
+        ? currentSuspects.filter(id => id !== stationId)
+        : [...currentSuspects, stationId];
+
+      let nextEliminated = prev.currentRound.eliminatedStationIds || [];
+      if (!isSuspect) {
+        nextEliminated = nextEliminated.filter(id => id !== stationId);
+      }
+
+      return {
+        ...prev,
+        currentRound: {
+          ...prev.currentRound,
+          suspectStationIds: nextSuspects,
+          eliminatedStationIds: nextEliminated,
+        },
+      };
+    });
+  }, [setGameState]);
+
   const acceptChallengeCard = useCallback((card: ChallengeCard) => {
     soundEffects.playCardDraw();
     setGameState(prev => {
@@ -1172,6 +1204,113 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     });
   }, [setGameState]);
 
+  const transmitHiderBeacon = useCallback(() => {
+    soundEffects.playCurseAlarm();
+    triggerHaptic('warning');
+    setGameState(prev => {
+      if (!prev.currentRound) return prev;
+      const lockedStId = prev.currentRound.lockedHiderStationId;
+      const station = lockedStId ? MTR_STATIONS[lockedStId] : null;
+      const district = station?.district || "Kowloon";
+      const primaryLineName = station ? MTR_LINES[station.lines[0]]?.name || "MTR Network" : "MTR Network";
+
+      const newPing: BeaconPing = {
+        id: `ping-${Date.now()}`,
+        timestamp: new Date(),
+        district,
+        lineName: primaryLineName,
+        message: `Beacon ping received! Hiders confirmed within ${district} District (${primaryLineName}).`,
+      };
+
+      const existingPings = prev.currentRound.beaconPings || [];
+      const existingTimeline = prev.currentRound.timeline || [];
+      const newEvent: TimelineEvent = {
+        id: `tl-${Date.now()}`,
+        timestamp: new Date(),
+        type: 'question_answered',
+        title: '📡 30-MIN HIDER BEACON TRANSMITTED',
+        description: `Automated cell tower ping received! Hiders confirmed within ${district} District (${primaryLineName}).`,
+        badge: 'BEACON PING',
+        teamRole: 'hider',
+      };
+
+      return {
+        ...prev,
+        currentRound: {
+          ...prev.currentRound,
+          beaconPings: [...existingPings, newPing],
+          nextBeaconTime: new Date(Date.now() + 30 * 60 * 1000),
+          timeline: [...existingTimeline, newEvent],
+        },
+      };
+    });
+  }, [setGameState]);
+
+  const swapRolesAndStartNextRound = useCallback(() => {
+    soundEffects.playVictory();
+    triggerHaptic('success');
+    setGameState(prev => {
+      const currentHidingTeam = prev.currentRound?.hidingTeam;
+      const currentSeekingTeam = prev.currentRound?.seekingTeams[0];
+
+      if (!currentHidingTeam || !currentSeekingTeam) {
+        toast?.({ title: "Cannot Swap Roles", description: "At least two teams are required.", variant: "destructive" });
+        return prev;
+      }
+
+      const updatedTeams = prev.teams.map(t => {
+        if (t.id === currentHidingTeam.id) {
+          return { ...t, isHiding: false, isSeeking: true, coins: 0, cursesUsed: 0 };
+        }
+        if (t.id === currentSeekingTeam.id) {
+          return { ...t, isHiding: true, isSeeking: false, coins: 0, cursesUsed: 0 };
+        }
+        return t;
+      });
+
+      const newHidingTeam = updatedTeams.find(t => t.id === currentSeekingTeam.id)!;
+      const newSeekingTeams = updatedTeams.filter(t => t.id !== newHidingTeam.id);
+
+      const roundStartTime = new Date();
+      const roundNum = (prev.currentRound?.roundNumber || 1) + 1;
+
+      const newRound: GameRound = {
+        roundNumber: roundNum,
+        hidingTeam: { ...newHidingTeam },
+        seekingTeams: newSeekingTeams.map(st => ({ ...st })),
+        startTime: roundStartTime,
+        phaseStartTime: roundStartTime,
+        status: 'hiding-phase',
+        askedQuestions: [],
+        activeCurse: null,
+        timeline: [
+          {
+            id: `tl-${Date.now()}`,
+            timestamp: roundStartTime,
+            type: 'round_start',
+            title: `Round ${roundNum} Commenced (Role Swap!)`,
+            description: `${newHidingTeam.name} is now the Hider! They have 60 minutes to travel and lock into their 500m zone.`,
+            badge: 'Role Swap',
+            teamName: newHidingTeam.name,
+            teamRole: 'hider',
+          }
+        ],
+        eliminatedStationIds: [],
+        suspectStationIds: [],
+        beaconPings: [],
+        lockedHiderStationId: undefined,
+        isEndgameBreached: false,
+        activeChallenge: null,
+      };
+
+      return {
+        ...prev,
+        currentRound: newRound,
+        teams: updatedTeams,
+      };
+    });
+  }, [setGameState, toast]);
+
   const addTimelineEvent = useCallback((event: Omit<TimelineEvent, 'id' | 'timestamp'>) => {
     setGameState(prev => {
       if (!prev.currentRound) return prev;
@@ -1268,6 +1407,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   }
 
   const eliminatedStationIds = gameStateRef.current.currentRound?.eliminatedStationIds || [];
+  const suspectStationIds = gameStateRef.current.currentRound?.suspectStationIds || [];
 
   return (
     <GameContext.Provider value={{
@@ -1295,13 +1435,17 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       soundEnabled: gameStateRef.current.soundEnabled ?? true,
       toggleSound,
       eliminatedStationIds,
+      suspectStationIds,
       toggleEliminateStation,
+      toggleSuspectStation,
       eliminateStationsBulk,
       resetEliminations,
       acceptChallengeCard,
       completeChallengeCard,
       vetoChallengeCard,
       lockHiderStation,
+      transmitHiderBeacon,
+      swapRolesAndStartNextRound,
       declareEndgameBreach,
       tagHider,
       addTimelineEvent,

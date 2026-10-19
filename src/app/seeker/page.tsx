@@ -16,7 +16,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { TimerDisplay } from "@/components/game/TimerDisplay";
 import { VetoConsequenceModal } from "@/components/game/VetoConsequenceModal";
 import { useToast } from '@/hooks/use-toast';
-import { Search, ShieldQuestion, Send, ThumbsUp, ThumbsDown, ListChecks, Zap, Upload, CheckSquare, AlertTriangle, Dice6, Sparkles, Coins, Trophy, Flame, Map, Clock, Target, HelpCircle, ArrowLeftRight, MapPin, Camera } from "lucide-react";
+import { Search, ShieldQuestion, Send, ThumbsUp, ThumbsDown, ListChecks, Zap, Upload, CheckSquare, AlertTriangle, Dice6, Sparkles, Coins, Trophy, Flame, Map, Clock, Target, HelpCircle, ArrowLeftRight, MapPin, Camera, Star } from "lucide-react";
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -26,6 +26,9 @@ import { MTR_STATIONS, MTRStation } from "@/lib/mtrData";
 import { ChallengeDeckModal } from "@/components/game/ChallengeDeckModal";
 import { EndgameBreachModal } from "@/components/game/EndgameBreachModal";
 import { MatchTimeline } from "@/components/game/MatchTimeline";
+import { CurseKlaxonModal } from "@/components/game/CurseKlaxonModal";
+import { BeaconPingAlert } from "@/components/game/BeaconPingAlert";
+import { CaughtCelebrationModal } from "@/components/game/CaughtCelebrationModal";
 import { triggerHaptic } from "@/lib/haptics";
 import { soundEffects } from "@/lib/soundEffects";
 
@@ -126,10 +129,13 @@ function SeekerPageContent() {
     completeChallengeCard,
     vetoChallengeCard,
     tagHider,
+    suspectStationIds,
+    swapRolesAndStartNextRound,
   } = useGameContext();
   const { toast } = useToast();
 
   const [myTeam, setMyTeam] = useState<Team | undefined>(undefined);
+  const [isCaughtModalOpen, setIsCaughtModalOpen] = useState(true);
   
   const [selectedQuestionType, setSelectedQuestionType] = useState<QuestionOptionType | undefined>(undefined);
   const [questionText, setQuestionText] = useState("");
@@ -259,7 +265,52 @@ function SeekerPageContent() {
   }
   
   if (!currentRound || (currentRound.status !== 'hiding-phase' && currentRound.status !== 'seeking-phase')) {
-     return (
+    if (currentRound?.status === 'completed') {
+      return (
+        <div className="flex flex-col items-center justify-center h-full space-y-4 max-w-lg mx-auto py-8">
+          <CaughtCelebrationModal
+            round={currentRound}
+            onSwapRoles={swapRolesAndStartNextRound}
+            isOpen={isCaughtModalOpen}
+            onClose={() => setIsCaughtModalOpen(false)}
+          />
+          <PageHeader title="Seeker View" icon={Search}/>
+          <Card className="w-full text-center border-amber-500/40 bg-gradient-to-b from-card to-amber-950/20 shadow-xl">
+            <CardHeader className="space-y-2">
+              <div className="w-14 h-14 rounded-2xl bg-amber-500/20 text-amber-400 mx-auto flex items-center justify-center">
+                <Trophy className="h-7 w-7" />
+              </div>
+              <CardTitle className="text-2xl font-black text-amber-500">
+                Round Over — Hider Tagged!
+              </CardTitle>
+              <CardDescription>
+                Outstanding work! You tracked down and tagged the hiders.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-col gap-2.5">
+                <Button 
+                  onClick={() => setIsCaughtModalOpen(true)}
+                  variant="outline"
+                  className="w-full border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+                >
+                  View Episode Tag & Survival Stats
+                </Button>
+                <Button 
+                  onClick={swapRolesAndStartNextRound}
+                  className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold h-11 rounded-xl shadow-lg flex items-center justify-center gap-2"
+                >
+                  <ArrowLeftRight className="h-4 w-4" />
+                  Swap Roles & Start Next Round!
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+
+    return (
       <div className="flex flex-col items-center justify-center h-full">
         <PageHeader title="Seeker View" icon={Search}/>
         <Card className="w-full max-w-md text-center">
@@ -280,7 +331,20 @@ function SeekerPageContent() {
   const isCurseActionDisabled = currentRound?.activeCurse?.resolutionStatus === 'pending_hider_acknowledgement';
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
+      {/* Jet Lag Seeker Curse Klaxon Banner */}
+      <CurseKlaxonModal
+        activeCurse={currentRound?.activeCurse || null}
+        onCompleteCursePhoto={seekerCompletesCurseAction}
+      />
+
+      {/* 30-min Mandatory Beacon Ping Alert */}
+      <BeaconPingAlert
+        role="seeker"
+        latestPing={currentRound?.beaconPings?.[currentRound.beaconPings.length - 1]}
+        isSeekingPhase={isSeekingPhase}
+      />
+
       {/* Endgame 500m Breach Siren & Capture Dialog */}
       <EndgameBreachModal
         isBreached={Boolean(currentRound?.isEndgameBreached)}
@@ -319,6 +383,15 @@ function SeekerPageContent() {
             <Target className="h-4 w-4" />
             <span>{70 - (currentRound?.eliminatedStationIds?.length || 0)}/70</span>
           </div>
+          {suspectStationIds && suspectStationIds.length > 0 && (
+            <>
+              <span className="text-muted-foreground/40">•</span>
+              <div className="flex items-center gap-1 text-amber-400 font-mono">
+                <Star className="h-3.5 w-3.5 fill-amber-400" />
+                <span>{suspectStationIds.length} Suspect{suspectStationIds.length > 1 ? 's' : ''}</span>
+              </div>
+            </>
+          )}
         </div>
 
         <div className="flex items-center gap-1.5">

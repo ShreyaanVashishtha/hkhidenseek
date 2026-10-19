@@ -119,6 +119,14 @@ export interface ActiveCurseInfo {
   resolutionStatus?: 'pending_seeker_action' | 'pending_hider_acknowledgement' | 'resolved';
 }
 
+export interface BeaconPing {
+  id: string;
+  timestamp: Date;
+  district: string;
+  lineName: string;
+  message: string;
+}
+
 export interface GameRound {
   roundNumber: number;
   hidingTeam: Team | null;
@@ -133,7 +141,11 @@ export interface GameRound {
   timeline?: TimelineEvent[];
   activeChallenge?: ActiveChallenge | null;
   drawnChallengeOptions?: ChallengeCard[];
+  handCards?: ChallengeCard[]; // Up to 3 challenge cards in hand
   eliminatedStationIds?: string[];
+  suspectStationIds?: string[]; // Ben & Adam's Top Suspects
+  beaconPings?: BeaconPing[]; // 30-min mandatory hider pings
+  nextBeaconTime?: Date;
   lockedHiderStationId?: string;
   isEndgameBreached?: boolean;
   tagEvent?: {

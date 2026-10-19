@@ -19,12 +19,14 @@ import { EndgameBreachModal } from "@/components/game/EndgameBreachModal";
 import { MatchTimeline } from "@/components/game/MatchTimeline";
 import { MTR_STATIONS, calculateHaversineDistanceKm } from "@/lib/mtrData";
 import { useToast } from '@/hooks/use-toast';
-import { Eye, ShieldQuestion, Upload, Send, Dice5, Zap, Coins, HelpCircle, CheckCircle, Image as ImageIcon, Loader2, Thermometer as ThermometerIcon, AlertTriangle, Map, Clock, Bell, Target, MapPin } from "lucide-react";
+import { Eye, ShieldQuestion, Upload, Send, Dice5, Zap, Coins, HelpCircle, CheckCircle, Image as ImageIcon, Loader2, Thermometer as ThermometerIcon, AlertTriangle, Map, Clock, Bell, Target, MapPin, Trophy, ArrowLeftRight } from "lucide-react";
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { PinProtectPage } from '@/components/auth/PinProtectPage';
+import { BeaconPingAlert } from "@/components/game/BeaconPingAlert";
+import { CaughtCelebrationModal } from "@/components/game/CaughtCelebrationModal";
 import { triggerHaptic } from '@/lib/haptics';
 import { soundEffects } from '@/lib/soundEffects';
 
@@ -55,10 +57,13 @@ function HiderPageContent() {
     recordCurseUsed,
     hiderAcknowledgesSeekerPhoto,
     isLoadingState, // Get loading state
+    transmitHiderBeacon,
+    swapRolesAndStartNextRound,
   } = useGameContext();
   const { toast } = useToast();
 
   const [myTeam, setMyTeam] = useState<Team | undefined>(undefined);
+  const [isCaughtModalOpen, setIsCaughtModalOpen] = useState(true);
 
   const [selectedQuestionToAnswer, setSelectedQuestionToAnswer] = useState<AskedQuestion | null>(null);
   const [responseText, setResponseText] = useState("");
@@ -272,7 +277,52 @@ function HiderPageContent() {
   }
   
   if (!currentRound || (currentRound.status !== 'hiding-phase' && currentRound.status !== 'seeking-phase')) {
-     return (
+    if (currentRound?.status === 'completed') {
+      return (
+        <div className="flex flex-col items-center justify-center h-full space-y-4 max-w-lg mx-auto py-8">
+          <CaughtCelebrationModal
+            round={currentRound}
+            onSwapRoles={swapRolesAndStartNextRound}
+            isOpen={isCaughtModalOpen}
+            onClose={() => setIsCaughtModalOpen(false)}
+          />
+          <PageHeader title="Hider View" icon={Eye}/>
+          <Card className="w-full text-center border-amber-500/40 bg-gradient-to-b from-card to-amber-950/20 shadow-xl">
+            <CardHeader className="space-y-2">
+              <div className="w-14 h-14 rounded-2xl bg-amber-500/20 text-amber-400 mx-auto flex items-center justify-center">
+                <Trophy className="h-7 w-7" />
+              </div>
+              <CardTitle className="text-2xl font-black text-amber-500">
+                Round Over — You Were Tagged!
+              </CardTitle>
+              <CardDescription>
+                Epic hiding effort across Hong Kong! Ready to switch sides and hunt them down?
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-col gap-2.5">
+                <Button 
+                  onClick={() => setIsCaughtModalOpen(true)}
+                  variant="outline"
+                  className="w-full border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+                >
+                  View Tag Celebration & Survival Stats
+                </Button>
+                <Button 
+                  onClick={swapRolesAndStartNextRound}
+                  className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold h-11 rounded-xl shadow-lg flex items-center justify-center gap-2"
+                >
+                  <ArrowLeftRight className="h-4 w-4" />
+                  Swap Roles & Become Seekers!
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+
+    return (
       <div className="flex flex-col items-center justify-center h-full">
         <PageHeader title="Hider View" icon={Eye}/>
         <Card className="w-full max-w-md text-center">
@@ -326,6 +376,14 @@ function HiderPageContent() {
         title={`Hider View - Team: ${myTeam?.name || "N/A"}`}
         description={isHidingPhase ? "Choose your hiding spot! The seekers are waiting." : "Evade the seekers! Answer their questions carefully."}
         icon={Eye}
+      />
+
+      {/* 30-min Mandatory Cellular Beacon Ping Alert */}
+      <BeaconPingAlert
+        role="hider"
+        latestPing={currentRound?.beaconPings?.[currentRound.beaconPings.length - 1]}
+        onTransmitBeacon={transmitHiderBeacon}
+        isSeekingPhase={isSeekingPhase}
       />
 
       <EndgameBreachModal

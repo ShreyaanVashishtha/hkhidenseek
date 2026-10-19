@@ -38,7 +38,8 @@ import {
   Target,
   Filter,
   Flame,
-  Trophy
+  Trophy,
+  Star
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useGameContext } from '@/hooks/useGameContext';
@@ -69,7 +70,9 @@ export function MTRMapDisplay({
   const { 
     currentRound, 
     eliminatedStationIds = [], 
+    suspectStationIds = [],
     toggleEliminateStation, 
+    toggleSuspectStation,
     eliminateStationsBulk, 
     resetEliminations,
     lockHiderStation,
@@ -693,6 +696,7 @@ export function MTRMapDisplay({
               const isHighlighted = highlightStationIds.includes(st.id);
               const isLineActive = !activeLineId || st.lines.includes(activeLineId);
               const isEliminated = eliminatedStationIds.includes(st.id);
+              const isSuspect = suspectStationIds.includes(st.id);
               const primaryLine = MTR_LINES[st.lines[0]];
 
               const opacity = isEliminated ? 0.22 : (isLineActive ? 1 : 0.12);
@@ -725,14 +729,27 @@ export function MTRMapDisplay({
                     />
                   )}
 
+                  {/* Top Suspect Golden Dashed Ring */}
+                  {isSuspect && !isEliminated && (
+                    <circle
+                      cx={st.x}
+                      cy={st.y}
+                      r="14"
+                      fill="none"
+                      stroke="#f59e0b"
+                      strokeWidth="2.5"
+                      strokeDasharray="4,2"
+                    />
+                  )}
+
                   {/* Interchange Node (Official MTR style: large white ring with dark outer casing) */}
                   {st.isInterchange ? (
                     <circle
                       cx={st.x}
                       cy={st.y}
                       r={isSelected ? "9.5" : "8"}
-                      fill={isEliminated ? "#334155" : "#ffffff"}
-                      stroke="#0f172a"
+                      fill={isEliminated ? "#334155" : (isSuspect ? "#fef3c7" : "#ffffff")}
+                      stroke={isSuspect ? "#f59e0b" : "#0f172a"}
                       strokeWidth="3.5"
                       filter={isSelected ? "url(#activeGlow)" : undefined}
                       className="transition-transform duration-200 group-hover:scale-125"
@@ -743,8 +760,8 @@ export function MTRMapDisplay({
                       cx={st.x}
                       cy={st.y}
                       r={isSelected ? "7" : "5"}
-                      fill={isEliminated ? "#334155" : "#ffffff"}
-                      stroke={isEliminated ? "#64748b" : (primaryLine?.color || "#ffffff")}
+                      fill={isEliminated ? "#334155" : (isSuspect ? "#fef3c7" : "#ffffff")}
+                      stroke={isEliminated ? "#64748b" : (isSuspect ? "#f59e0b" : (primaryLine?.color || "#ffffff"))}
                       strokeWidth="2.5"
                       className="transition-transform duration-200 group-hover:scale-125"
                     />
@@ -838,6 +855,11 @@ export function MTRMapDisplay({
                     <Badge variant="destructive" className="text-[9px] py-0 px-1.5 font-bold">
                       Eliminated
                     </Badge>
+                  ) : suspectStationIds.includes(selectedStation.id) ? (
+                    <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-[9px] py-0 px-1.5 font-bold flex items-center gap-1">
+                      <Star className="h-2.5 w-2.5 fill-amber-400 text-amber-400" />
+                      Top Suspect
+                    </Badge>
                   ) : (
                     <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-[9px] py-0 px-1.5">
                       Candidate ({remainingCandidatesCount}/{totalStations})
@@ -902,7 +924,7 @@ export function MTRMapDisplay({
               )}
 
               {role === 'seeker' && (
-                <div className="grid grid-cols-2 gap-2 w-full">
+                <div className="grid grid-cols-3 gap-1.5 w-full">
                   <Button
                     size="sm"
                     onClick={() => {
@@ -914,10 +936,27 @@ export function MTRMapDisplay({
                         description: `Switched to Ask tab with ${selectedStation.name} selected.`,
                       });
                     }}
-                    className="w-full bg-sky-600 hover:bg-sky-500 text-white font-semibold text-xs h-9 flex items-center justify-center gap-1 rounded-xl"
+                    className="w-full bg-sky-600 hover:bg-sky-500 text-white font-semibold text-[11px] h-9 flex items-center justify-center gap-1 rounded-xl px-1"
                   >
-                    <Compass className="h-3.5 w-3.5" />
-                    Target in Clue
+                    <Compass className="h-3 w-3" />
+                    Target
+                  </Button>
+
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      toggleSuspectStation(selectedStation.id);
+                    }}
+                    className={`w-full text-[11px] h-9 font-semibold flex items-center justify-center gap-1 rounded-xl transition-all px-1 ${
+                      suspectStationIds.includes(selectedStation.id)
+                        ? 'border-amber-500 bg-amber-500/20 text-amber-300 hover:bg-amber-500/30'
+                        : 'border-slate-700 bg-slate-900/60 text-slate-300 hover:bg-slate-800'
+                    }`}
+                  >
+                    <Star className={`h-3 w-3 ${suspectStationIds.includes(selectedStation.id) ? 'fill-amber-400 text-amber-400' : ''}`} />
+                    {suspectStationIds.includes(selectedStation.id) ? 'Suspect' : 'Suspect?'}
                   </Button>
 
                   <Button
@@ -934,7 +973,7 @@ export function MTRMapDisplay({
                       }
                       toggleEliminateStation(selectedStation.id);
                     }}
-                    className={`w-full text-xs h-9 font-semibold flex items-center justify-center gap-1 rounded-xl transition-all ${
+                    className={`w-full text-[11px] h-9 font-semibold flex items-center justify-center gap-1 rounded-xl transition-all px-1 ${
                       eliminatedStationIds.includes(selectedStation.id)
                         ? 'border-emerald-600/60 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/50'
                         : 'border-rose-600/60 bg-rose-950/40 text-rose-300 hover:bg-rose-900/50'
@@ -942,12 +981,12 @@ export function MTRMapDisplay({
                   >
                     {eliminatedStationIds.includes(selectedStation.id) ? (
                       <>
-                        <Check className="h-3.5 w-3.5 text-emerald-400" />
+                        <Check className="h-3 w-3 text-emerald-400" />
                         Restore
                       </>
                     ) : (
                       <>
-                        <X className="h-3.5 w-3.5 text-rose-400" />
+                        <X className="h-3 w-3 text-rose-400" />
                         Eliminate
                       </>
                     )}
