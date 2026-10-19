@@ -248,39 +248,145 @@ function AdminPageContent() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="glass-card border-slate-800 shadow-xl">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><KeyRound /> Access Control & PIN Management</CardTitle>
-          <CardDescription>Set or update PINs for accessing different game panels. Clear a PIN by submitting an empty value.</CardDescription>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2 text-base font-bold text-white font-mono uppercase">
+              <KeyRound className="h-5 w-5 text-amber-400" /> Access Control & PIN Configuration
+            </CardTitle>
+            <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-[10px] font-mono">
+              Competitive Secrecy
+            </Badge>
+          </div>
+          <CardDescription className="text-xs text-slate-300">
+            Set role-protection PINs to prevent players on separate mobile devices from peeking at opposing screens.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="space-y-2">
-            <Label htmlFor="admin-pin">Admin Panel PIN (current: {adminPin ? "Set" : "Not Set - defaults to 113221 on first load"})</Label>
-            <div className="flex gap-2">
-              <Input id="admin-pin" type="password" value={adminPinInput} onChange={(e) => setAdminPinInput(e.target.value)} placeholder="Enter new Admin PIN or leave blank to clear" />
-              <Button onClick={handleSetAdminPin}>Set Admin PIN</Button>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+            <div className="space-y-1">
+              <span className="text-[10px] font-mono uppercase text-slate-400">Admin PIN Status</span>
+              <p className="font-mono font-bold text-sm text-purple-400">
+                {adminPin || "113221 (Default)"}
+              </p>
+            </div>
+            <div className="space-y-1">
+              <span className="text-[10px] font-mono uppercase text-slate-400">Hider PIN Status</span>
+              <p className="font-mono font-bold text-sm text-emerald-400">
+                {hiderPin ? hiderPin : "Open / Unset (No password)"}
+              </p>
+            </div>
+            <div className="space-y-1">
+              <span className="text-[10px] font-mono uppercase text-slate-400">Seeker PIN Status</span>
+              <p className="font-mono font-bold text-sm text-sky-400">
+                {seekerPin ? seekerPin : "Open / Unset (No password)"}
+              </p>
             </div>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="hider-pin">Hider Panel PIN (current: {hiderPin ? hiderPin : "Not Set"})</Label>
-            <div className="flex gap-2">
-              <Input id="hider-pin" type="password" value={hiderPinInput} onChange={(e) => setHiderPinInput(e.target.value)} placeholder="Enter new Hider PIN or leave blank to clear" />
-              <Button onClick={handleSetHiderPin}>Set Hider PIN</Button>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="admin-pin" className="text-xs font-mono uppercase text-slate-300">Admin Panel PIN</Label>
+              <div className="flex gap-2">
+                <Input 
+                  id="admin-pin" 
+                  type="text" 
+                  value={adminPinInput} 
+                  onChange={(e) => setAdminPinInput(e.target.value)} 
+                  placeholder="e.g. 113221" 
+                  className="bg-slate-900 border-slate-700 text-white font-mono text-sm"
+                />
+                <Button onClick={handleSetAdminPin} className="bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs px-4">
+                  Set Admin PIN
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="hider-pin" className="text-xs font-mono uppercase text-slate-300">Hider Panel PIN</Label>
+              <div className="flex gap-2">
+                <Input 
+                  id="hider-pin" 
+                  type="text" 
+                  value={hiderPinInput} 
+                  onChange={(e) => setHiderPinInput(e.target.value)} 
+                  placeholder="e.g. 0000 or blank to open" 
+                  className="bg-slate-900 border-slate-700 text-white font-mono text-sm"
+                />
+                <Button onClick={handleSetHiderPin} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-4">
+                  Set Hider PIN
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="seeker-pin" className="text-xs font-mono uppercase text-slate-300">Seeker Panel PIN</Label>
+              <div className="flex gap-2">
+                <Input 
+                  id="seeker-pin" 
+                  type="text" 
+                  value={seekerPinInput} 
+                  onChange={(e) => setSeekerPinInput(e.target.value)} 
+                  placeholder="e.g. 1111 or blank to open" 
+                  className="bg-slate-900 border-slate-700 text-white font-mono text-sm"
+                />
+                <Button onClick={handleSetSeekerPin} className="bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs px-4">
+                  Set Seeker PIN
+                </Button>
+              </div>
             </div>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="seeker-pin">Seeker Panel PIN (current: {seekerPin ? seekerPin : "Not Set"})</Label>
-            <div className="flex gap-2">
-              <Input id="seeker-pin" type="password" value={seekerPinInput} onChange={(e) => setSeekerPinInput(e.target.value)} placeholder="Enter new Seeker PIN or leave blank to clear" />
-              <Button onClick={handleSetSeekerPin}>Set Seeker PIN</Button>
-            </div>
+
+          <div className="pt-2 flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setAdminPin('113221');
+                setHiderPin('0000');
+                setSeekerPin('1111');
+                toast({
+                  title: "Preset Test PINs Applied",
+                  description: "Admin: 113221 • Hider: 0000 • Seeker: 1111",
+                });
+              }}
+              className="text-xs font-mono border-slate-700 bg-slate-900/80 text-amber-300 hover:bg-slate-800"
+            >
+              ⚡ Set Standard PINs (Admin: 113221, Hider: 0000, Seeker: 1111)
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setHiderPin('');
+                setSeekerPin('');
+                toast({
+                  title: "Player PINs Cleared",
+                  description: "Hider and Seeker panels are now in open access mode.",
+                });
+              }}
+              className="text-xs font-mono border-slate-700 bg-slate-900/80 text-slate-300 hover:bg-slate-800"
+            >
+              🔓 Clear Player PINs (Open Access)
+            </Button>
           </div>
-          <Separator />
-           <CardDescription>Force logout users from their authenticated sessions (e.g., for testing PIN entry).</CardDescription>
+
+          <Separator className="bg-slate-800" />
+          <CardDescription className="text-xs text-slate-400">
+            Force logout local cached sessions for testing authentication:
+          </CardDescription>
           <div className="flex flex-wrap gap-2">
-             <Button variant="outline" onClick={logoutAdmin} className="flex items-center gap-2"><LogOut /> Logout Admin Session</Button>
-             <Button variant="outline" onClick={logoutHider} className="flex items-center gap-2"><LogOut /> Logout Hider Session</Button>
-             <Button variant="outline" onClick={logoutSeeker} className="flex items-center gap-2"><LogOut /> Logout Seeker Session</Button>
+            <Button variant="outline" size="sm" onClick={logoutAdmin} className="text-xs border-slate-700 hover:bg-slate-800 text-slate-300 flex items-center gap-1.5">
+              <LogOut className="h-3.5 w-3.5" /> Logout Admin
+            </Button>
+            <Button variant="outline" size="sm" onClick={logoutHider} className="text-xs border-slate-700 hover:bg-slate-800 text-slate-300 flex items-center gap-1.5">
+              <LogOut className="h-3.5 w-3.5" /> Logout Hider
+            </Button>
+            <Button variant="outline" size="sm" onClick={logoutSeeker} className="text-xs border-slate-700 hover:bg-slate-800 text-slate-300 flex items-center gap-1.5">
+              <LogOut className="h-3.5 w-3.5" /> Logout Seeker
+            </Button>
           </div>
         </CardContent>
       </Card>

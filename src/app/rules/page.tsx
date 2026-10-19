@@ -1,28 +1,48 @@
-
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { GAME_RULES, GAME_TITLE, QUESTION_OPTIONS, CURSE_DICE_OPTIONS, CURSE_DICE_COST } from "@/lib/constants";
+import { Badge } from "@/components/ui/badge";
+import { GAME_RULES, QUESTION_OPTIONS, CURSE_DICE_OPTIONS, CURSE_DICE_COST } from "@/lib/constants";
 import { PageHeader } from "@/components/PageHeader";
-import { ScrollText, Coins, Zap, HelpCircle } from "lucide-react";
+import { ScrollText, Coins, Zap, HelpCircle, Train, MapPin, Shield, CheckCircle2, Trophy, Clock } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 
-function RuleSection({ title, rules, icon: Icon }: { title: string, rules: string[] | { name: string, description: string }[], icon?: React.ElementType }) {
+function RuleCard({ 
+  title, 
+  rules, 
+  icon: Icon,
+  badge 
+}: { 
+  title: string; 
+  rules: string[] | { name: string; description: string }[]; 
+  icon?: React.ElementType;
+  badge?: string;
+}) {
   return (
-    <Card className="mb-6 shadow-md">
-      <CardHeader>
-        <CardTitle className="flex items-center text-xl text-primary">
-          {Icon && <Icon className="mr-2 h-5 w-5" />}
-          {title}
-        </CardTitle>
+    <Card className="glass-card border-slate-800 shadow-xl">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center text-lg font-bold text-white font-mono uppercase">
+            {Icon && <Icon className="mr-2 h-5 w-5 text-sky-400" />}
+            {title}
+          </CardTitle>
+          {badge && (
+            <Badge variant="outline" className="text-[10px] font-mono text-sky-300 border-sky-500/40">
+              {badge}
+            </Badge>
+          )}
+        </div>
       </CardHeader>
       <CardContent>
-        <ul className="list-disc pl-5 space-y-2 text-foreground/90">
+        <ul className="space-y-2.5 text-xs sm:text-sm text-slate-300">
           {rules.map((rule, index) => (
-            <li key={index}>
-              {typeof rule === 'string' ? rule : (
-                <>
-                  <strong>{rule.name}:</strong> {rule.description}
-                </>
-              )}
+            <li key={index} className="flex items-start gap-2">
+              <span className="h-1.5 w-1.5 rounded-full bg-sky-400 mt-2 shrink-0" />
+              <div>
+                {typeof rule === 'string' ? rule : (
+                  <>
+                    <strong className="text-white font-semibold">{rule.name}:</strong> {rule.description}
+                  </>
+                )}
+              </div>
             </li>
           ))}
         </ul>
@@ -33,70 +53,168 @@ function RuleSection({ title, rules, icon: Icon }: { title: string, rules: strin
 
 export default function RulesPage() {
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 max-w-4xl mx-auto pb-10">
       <PageHeader 
-        title={`${GAME_TITLE} - Rules`}
-        description="Understand the mechanics and guidelines for playing."
+        title="Official Rules"
+        description="Comprehensive rulebook and mechanics for Jet Lag: Hong Kong MTR Hide & Seek."
         icon={ScrollText}
+        badge="Season Rulebook"
       />
 
-      <RuleSection title={GAME_RULES.introduction} rules={[]} />
-      <RuleSection title={GAME_RULES.transport.title} rules={GAME_RULES.transport.rules} />
-      <RuleSection title={GAME_RULES.geographicScope.title} rules={GAME_RULES.geographicScope.rules} />
-      <RuleSection title={GAME_RULES.gamePhases.title} rules={GAME_RULES.gamePhases.phases} />
-      <RuleSection title={GAME_RULES.hidingRules.title} rules={GAME_RULES.hidingRules.rules} />
-      <RuleSection title={GAME_RULES.challenges.title} rules={GAME_RULES.challenges.rules} />
-      <RuleSection title={GAME_RULES.coins.title} rules={GAME_RULES.coins.rules} icon={Coins}/>
+      {/* Intro Objective Banner */}
+      <div className="p-4 sm:p-6 rounded-2xl bg-gradient-to-r from-sky-950/80 via-slate-900 to-indigo-950/80 border border-sky-500/30 text-white shadow-xl space-y-2">
+        <div className="flex items-center gap-2">
+          <Trophy className="h-5 w-5 text-amber-400" />
+          <h2 className="text-base sm:text-lg font-black uppercase font-mono tracking-tight text-white">
+            Core Victory Condition
+          </h2>
+        </div>
+        <p className="text-sm text-slate-200 leading-relaxed font-normal">
+          {GAME_RULES.introduction} Teams rotate between hiding and seeking across rounds. The team with the <strong>longest total survival time</strong> as hiders across the match is crowned champion.
+        </p>
+      </div>
 
-      <Card className="mb-6 shadow-md">
-        <CardHeader>
-          <CardTitle className="flex items-center text-xl text-primary">
-            <HelpCircle className="mr-2 h-5 w-5" />
-            Question Types (Hider Earnings)
-          </CardTitle>
-          <CardDescription>{GAME_RULES.questionRules.rules.join(" ")} Seekers ask questions for free.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {QUESTION_OPTIONS.map((q, index) => (
-            <div key={q.id}>
-              <h4 className="font-semibold text-lg flex items-center">
-                {q.icon && <q.icon className="mr-2 h-4 w-4 text-accent" />}
-                {q.name} (Hiders earn: {q.hiderCoinsEarned} coins)
-              </h4>
-              <p className="text-sm text-foreground/80 pl-6">{q.description}</p>
-              {q.seekerPrompt && <p className="text-xs text-muted-foreground pl-6 mt-1">Examples: {q.seekerPrompt}</p>}
-              {index < QUESTION_OPTIONS.length - 1 && <Separator className="my-3" />}
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-      
-      <Card className="mb-6 shadow-md">
-        <CardHeader>
-          <CardTitle className="flex items-center text-xl text-primary">
-            <Zap className="mr-2 h-5 w-5" />
-            Hider’s Curse Dice
-          </CardTitle>
-          <CardDescription>
-            Cost: {CURSE_DICE_COST} coins. {GAME_RULES.curseDiceRules.rules.slice(1).join(" ")}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <RuleCard 
+          title={GAME_RULES.transport.title} 
+          rules={GAME_RULES.transport.rules} 
+          icon={Train} 
+          badge="MTR Exclusive" 
+        />
+        <RuleCard 
+          title={GAME_RULES.geographicScope.title} 
+          rules={GAME_RULES.geographicScope.rules} 
+          icon={MapPin} 
+          badge="500m Territory" 
+        />
+      </div>
+
+      <RuleCard 
+        title={GAME_RULES.gamePhases.title} 
+        rules={GAME_RULES.gamePhases.phases} 
+        icon={Clock} 
+        badge="60m / 120m" 
+      />
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <RuleCard 
+          title={GAME_RULES.hidingRules.title} 
+          rules={GAME_RULES.hidingRules.rules} 
+          icon={Shield} 
+        />
+        <RuleCard 
+          title={GAME_RULES.challenges.title} 
+          rules={GAME_RULES.challenges.rules} 
+          icon={CheckCircle2} 
+          badge="15m Freeze Penalty" 
+        />
+      </div>
+
+      <RuleCard 
+        title={GAME_RULES.coins.title} 
+        rules={GAME_RULES.coins.rules} 
+        icon={Coins} 
+        badge="Economy" 
+      />
+
+      {/* Question Types & Earnings */}
+      <Card className="glass-card border-slate-800 shadow-xl">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center text-lg font-bold text-white font-mono uppercase">
+              <HelpCircle className="mr-2 h-5 w-5 text-sky-400" />
+              Question Types & Hider Coin Rewards
+            </CardTitle>
+            <Badge className="bg-sky-500/20 text-sky-300 border-sky-500/40 text-[10px] font-mono">
+              Matrix
+            </Badge>
+          </div>
+          <CardDescription className="text-xs text-slate-300">
+            {GAME_RULES.questionRules.rules.join(" ")} Seekers ask questions for free, but every query awards coins to the hiders' curse bank!
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {CURSE_DICE_OPTIONS.map((curse, index) => (
-            <div key={curse.number}>
-              <h4 className="font-semibold text-lg flex items-center">
-                {curse.icon && <curse.icon className="mr-2 h-4 w-4 text-accent" />}
-                {curse.number}. {curse.name}
-              </h4>
-              <p className="text-sm text-foreground/80 pl-6">{curse.description}</p>
-              <p className="text-xs text-muted-foreground pl-6 mt-1"><strong>Effect:</strong> {curse.effect}</p>
-              {index < CURSE_DICE_OPTIONS.length - 1 && <Separator className="my-3" />}
-            </div>
-          ))}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {QUESTION_OPTIONS.map((q) => {
+              const Icon = q.icon || HelpCircle;
+              return (
+                <div key={q.id} className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 rounded-lg bg-sky-500/10 text-sky-400">
+                        <Icon className="h-4 w-4" />
+                      </div>
+                      <span className="font-bold text-sm text-white font-mono">{q.name}</span>
+                    </div>
+                    <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-[11px] font-mono font-bold">
+                      +{q.hiderCoinsEarned} Coins
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-slate-300">{q.description}</p>
+                  {q.seekerPrompt && (
+                    <p className="text-[11px] text-slate-400 font-mono italic">
+                      e.g., {q.seekerPrompt}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </CardContent>
       </Card>
 
-      <RuleSection title={GAME_RULES.endgame.title} rules={GAME_RULES.endgame.rules} />
+      {/* Curse Dice Catalog */}
+      <Card className="glass-card border-slate-800 shadow-xl">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center text-lg font-bold text-white font-mono uppercase">
+              <Zap className="mr-2 h-5 w-5 text-purple-400" />
+              Hider’s Curse Dice Arsenal
+            </CardTitle>
+            <Badge className="bg-purple-500/20 text-purple-300 border-purple-500/40 text-[10px] font-mono">
+              Cost: {CURSE_DICE_COST} Coins
+            </Badge>
+          </div>
+          <CardDescription className="text-xs text-slate-300">
+            Hiders can spend {CURSE_DICE_COST} coins to roll a 6-sided die. Limit: 2 curses per round.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {CURSE_DICE_OPTIONS.map((curse) => {
+              const Icon = curse.icon || Zap;
+              return (
+                <div key={curse.number} className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="flex items-center justify-center w-6 h-6 rounded-md bg-purple-600 text-white font-mono text-xs font-bold">
+                        {curse.number}
+                      </span>
+                      <span className="font-bold text-sm text-white">{curse.name}</span>
+                    </div>
+                    {curse.durationMinutes && (
+                      <Badge variant="outline" className="text-[10px] text-slate-400 border-slate-700">
+                        {curse.durationMinutes}m Duration
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-300">{curse.description}</p>
+                  <p className="text-[11px] text-purple-300/80 font-mono font-medium">
+                    Effect: {curse.effect}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      <RuleCard 
+        title={GAME_RULES.endgame.title} 
+        rules={GAME_RULES.endgame.rules} 
+        icon={Trophy} 
+        badge="Victory & Rotation" 
+      />
     </div>
   );
 }

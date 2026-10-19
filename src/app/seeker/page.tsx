@@ -131,6 +131,7 @@ function SeekerPageContent() {
     tagHider,
     suspectStationIds,
     swapRolesAndStartNextRound,
+    seedSimulatedMatch,
   } = useGameContext();
   const { toast } = useToast();
 
@@ -250,14 +251,35 @@ function SeekerPageContent() {
 
   if (!myTeam && isSeekingPhase) {
     return (
-      <div className="flex flex-col items-center justify-center h-full">
-        <PageHeader title="Seeker View" icon={Search}/>
-        <Card className="w-full max-w-md text-center">
-          <CardHeader>
-            <CardTitle>Not Assigned to a Seeking Team</CardTitle>
+      <div className="flex flex-col items-center justify-center min-h-[60vh] p-4 max-w-lg mx-auto">
+        <PageHeader title="Seeker HQ" icon={Search} badge="Status: Standby"/>
+        <Card className="w-full text-center glass-card border-slate-800 shadow-2xl">
+          <CardHeader className="space-y-2">
+            <div className="w-12 h-12 rounded-2xl bg-sky-500/10 border border-sky-500/20 text-sky-400 mx-auto flex items-center justify-center">
+              <Search className="h-6 w-6" />
+            </div>
+            <CardTitle className="text-xl font-black text-white uppercase font-mono">Not Assigned to a Seeking Team</CardTitle>
+            <CardDescription className="text-xs text-slate-300">
+              No seeking squad is assigned to your session for the current round.
+            </CardDescription>
           </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground">Please wait for the admin to assign you to a seeking team for the current round, or check the Admin panel.</p>
+          <CardContent className="space-y-3">
+            <Button
+              onClick={() => {
+                triggerHaptic('success');
+                seedSimulatedMatch({ phase: 'seeking-phase' });
+              }}
+              className="w-full bg-sky-600 hover:bg-sky-500 text-white font-bold h-11 rounded-xl shadow-md flex items-center justify-center gap-2"
+            >
+              <Zap className="h-4 w-4" /> Quick-Start Test Match (Team Ben & Adam)
+            </Button>
+            <Button
+              asChild
+              variant="outline"
+              className="w-full border-slate-700 text-slate-300 hover:text-white hover:bg-slate-800 text-xs h-10 rounded-xl"
+            >
+              <a href="/admin">Manage Teams in Admin Panel</a>
+            </Button>
           </CardContent>
         </Card>
       </div>
@@ -311,14 +333,35 @@ function SeekerPageContent() {
     }
 
     return (
-      <div className="flex flex-col items-center justify-center h-full">
-        <PageHeader title="Seeker View" icon={Search}/>
-        <Card className="w-full max-w-md text-center">
-          <CardHeader>
-            <CardTitle>No Active Round</CardTitle>
+      <div className="flex flex-col items-center justify-center min-h-[60vh] p-4 max-w-lg mx-auto">
+        <PageHeader title="Seeker HQ" icon={Search} badge="Status: Standby"/>
+        <Card className="w-full text-center glass-card border-slate-800 shadow-2xl">
+          <CardHeader className="space-y-2">
+            <div className="w-12 h-12 rounded-2xl bg-sky-500/10 border border-sky-500/20 text-sky-400 mx-auto flex items-center justify-center">
+              <Search className="h-6 w-6" />
+            </div>
+            <CardTitle className="text-xl font-black text-white uppercase font-mono">No Active Round Underway</CardTitle>
+            <CardDescription className="text-xs text-slate-300">
+              The match has not started or the previous round has concluded. Spin up a test match or start via Admin.
+            </CardDescription>
           </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground">The game round has not started or has ended. Please wait for the admin.</p>
+          <CardContent className="space-y-3">
+            <Button
+              onClick={() => {
+                triggerHaptic('success');
+                seedSimulatedMatch({ phase: 'seeking-phase' });
+              }}
+              className="w-full bg-sky-600 hover:bg-sky-500 text-white font-bold h-11 rounded-xl shadow-md flex items-center justify-center gap-2"
+            >
+              <Zap className="h-4 w-4" /> Quick-Start Match as Seekers (1-Click)
+            </Button>
+            <Button
+              asChild
+              variant="outline"
+              className="w-full border-slate-700 text-slate-300 hover:text-white hover:bg-slate-800 text-xs h-10 rounded-xl"
+            >
+              <a href="/admin">Open Match Control in Admin Panel</a>
+            </Button>
           </CardContent>
         </Card>
       </div>

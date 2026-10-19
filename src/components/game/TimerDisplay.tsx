@@ -1,9 +1,9 @@
-
 "use client";
 
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Clock } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface TimerDisplayProps {
   title: string;
@@ -24,13 +24,10 @@ export function TimerDisplay({ title, durationMinutes, phaseStartTime, isActive,
 
   useEffect(() => {
     if (!mounted || !isActive || !phaseStartTime) {
-      // If not mounted or timer is not active or no phaseStartTime, calculate initial/reset time.
-      // This also handles resetting the display if isActive becomes false.
       setTimeLeft(durationMinutes * 60);
       return;
     }
 
-    // Calculate initial time left based on phaseStartTime once mounted and active
     const phaseStartDateTime = new Date(phaseStartTime).getTime();
     const elapsedSeconds = Math.floor((Date.now() - phaseStartDateTime) / 1000);
     const initialTime = (durationMinutes * 60) - elapsedSeconds;
@@ -45,8 +42,7 @@ export function TimerDisplay({ title, durationMinutes, phaseStartTime, isActive,
     }
 
     const intervalId = setInterval(() => {
-      // Recalculate based on phaseStartTime on each interval to ensure accuracy
-      const currentPhaseStartDateTime = new Date(phaseStartTime).getTime(); // Re-fetch in case phaseStartTime object changed
+      const currentPhaseStartDateTime = new Date(phaseStartTime).getTime();
       const currentElapsedSeconds = Math.floor((Date.now() - currentPhaseStartDateTime) / 1000);
       const newTimeLeft = (durationMinutes * 60) - currentElapsedSeconds;
 
@@ -65,33 +61,55 @@ export function TimerDisplay({ title, durationMinutes, phaseStartTime, isActive,
     return () => clearInterval(intervalId);
   }, [mounted, isActive, phaseStartTime, durationMinutes, onTimerEnd]);
 
-
   const formatTime = (totalSeconds: number) => {
-    const minutes = Math.floor(totalSeconds / 60);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = totalSeconds % 60;
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    }
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   };
 
-  // Determine what to display. If not mounted, show the full duration or a placeholder.
-  // Otherwise, show the dynamically calculated timeLeft.
   const displayTime = mounted && isActive ? timeLeft : durationMinutes * 60;
-  const showActualTime = mounted && isActive;
+  const isUrgent = mounted && isActive && timeLeft <= 60 && timeLeft > 0;
+  const isExpired = mounted && isActive && timeLeft <= 0;
 
   return (
-    <Card className={className}>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-lg flex items-center gap-2">
-          <Clock className="h-5 w-5 text-primary" />
-          {title}
+    <Card className={cn(
+      "glass-card border-slate-800 shadow-xl transition-all overflow-hidden",
+      isUrgent && "border-red-500/80 bg-red-950/20 animate-pulse shadow-red-500/20",
+      isExpired && "border-red-500 bg-red-950/30",
+      className
+    )}>
+      <CardHeader className="pb-1 pt-3 px-4">
+        <CardTitle className="text-xs font-mono uppercase tracking-wider text-slate-400 flex items-center justify-between">
+          <span className="flex items-center gap-1.5 text-slate-300">
+            <Clock className={cn("h-3.5 w-3.5", isUrgent ? "text-red-400 animate-spin" : "text-sky-400")} />
+            {title}
+          </span>
+          {isActive && (
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping" />
+          )}
         </CardTitle>
       </CardHeader>
-      <CardContent>
-        <p className={`text-4xl font-bold ${showActualTime && timeLeft <= 60 && timeLeft > 0 ? 'text-destructive' : 'text-foreground'}`}>
-          {formatTime(displayTime)}
-        </p>
-        {!mounted && <p className="text-sm text-muted-foreground">Initializing timer...</p>}
-        {mounted && !isActive && timeLeft > 0 && <p className="text-sm text-muted-foreground">Timer paused or not started.</p>}
-        {mounted && isActive && timeLeft <=0 && <p className="text-sm text-destructive">Time's up!</p>}
+      <CardContent className="px-4 pb-3">
+        <div className="flex items-baseline gap-2">
+          <p className={cn(
+            "text-3xl sm:text-4xl font-black font-digital tracking-tight",
+            isUrgent ? "text-red-400 drop-shadow-[0_0_12px_rgba(239,68,68,0.7)]" :
+            isExpired ? "text-red-500" :
+            "text-white drop-shadow-[0_0_10px_rgba(59,130,246,0.3)]"
+          )}>
+            {formatTime(displayTime)}
+          </p>
+          <span className="text-[10px] font-mono uppercase text-slate-400">
+            {Math.floor(displayTime / 3600) > 0 ? "HRS:MIN:SEC" : "MIN:SEC"}
+          </span>
+        </div>
+        {!mounted && <p className="text-[11px] text-slate-400 mt-1 font-mono">Initializing timer...</p>}
+        {mounted && !isActive && timeLeft > 0 && <p className="text-[11px] text-slate-400 mt-1 font-mono">Standby</p>}
+        {mounted && isExpired && <p className="text-[11px] text-red-400 mt-1 font-mono font-bold uppercase">Time Expired</p>}
       </CardContent>
     </Card>
   );

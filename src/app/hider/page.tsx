@@ -61,6 +61,7 @@ function HiderPageContent() {
     isLoadingState, // Get loading state
     transmitHiderBeacon,
     swapRolesAndStartNextRound,
+    seedSimulatedMatch,
   } = useGameContext();
   const { toast } = useToast();
 
@@ -252,14 +253,35 @@ function HiderPageContent() {
     }
 
     return (
-      <div className="flex flex-col items-center justify-center h-full">
-        <PageHeader title="Hider View" icon={Eye}/>
-        <Card className="w-full max-w-md text-center">
-          <CardHeader>
-            <CardTitle>No Active Round</CardTitle>
+      <div className="flex flex-col items-center justify-center min-h-[60vh] p-4 max-w-lg mx-auto">
+        <PageHeader title="Hider Safehouse" icon={Eye} badge="Status: Standby"/>
+        <Card className="w-full text-center glass-card border-slate-800 shadow-2xl">
+          <CardHeader className="space-y-2">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 mx-auto flex items-center justify-center">
+              <Eye className="h-6 w-6" />
+            </div>
+            <CardTitle className="text-xl font-black text-white uppercase font-mono">No Active Round Underway</CardTitle>
+            <CardDescription className="text-xs text-slate-300">
+              The game round has not started or the previous match ended. Spin up a test match or start via Admin.
+            </CardDescription>
           </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground">The game round has not started or has ended. Please wait for the admin.</p>
+          <CardContent className="space-y-3">
+            <Button
+              onClick={() => {
+                triggerHaptic('success');
+                seedSimulatedMatch({ phase: 'seeking-phase' });
+              }}
+              className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold h-11 rounded-xl shadow-md flex items-center justify-center gap-2"
+            >
+              <Zap className="h-4 w-4" /> Quick-Start Match as Hiders (1-Click)
+            </Button>
+            <Button
+              asChild
+              variant="outline"
+              className="w-full border-slate-700 text-slate-300 hover:text-white hover:bg-slate-800 text-xs h-10 rounded-xl"
+            >
+              <a href="/admin">Open Match Control in Admin Panel</a>
+            </Button>
           </CardContent>
         </Card>
       </div>
@@ -268,14 +290,35 @@ function HiderPageContent() {
   
   if (!myTeam && (isHidingPhase || isSeekingPhase)) {
     return (
-      <div className="flex flex-col items-center justify-center h-full">
-        <PageHeader title="Hider View" icon={Eye}/>
-        <Card className="w-full max-w-md text-center">
-          <CardHeader>
-            <CardTitle>Not Assigned to Hiding Team</CardTitle>
+      <div className="flex flex-col items-center justify-center min-h-[60vh] p-4 max-w-lg mx-auto">
+        <PageHeader title="Hider Safehouse" icon={Eye} badge="Status: Standby"/>
+        <Card className="w-full text-center glass-card border-slate-800 shadow-2xl">
+          <CardHeader className="space-y-2">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 mx-auto flex items-center justify-center">
+              <Eye className="h-6 w-6" />
+            </div>
+            <CardTitle className="text-xl font-black text-white uppercase font-mono">Not Assigned to Hiding Team</CardTitle>
+            <CardDescription className="text-xs text-slate-300">
+              Your profile is not currently assigned to the team designated as hiders.
+            </CardDescription>
           </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground">Please wait for the admin to assign you to the hiding team for the current round, or check the Admin panel.</p>
+          <CardContent className="space-y-3">
+            <Button
+              onClick={() => {
+                triggerHaptic('success');
+                seedSimulatedMatch({ phase: 'seeking-phase' });
+              }}
+              className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold h-11 rounded-xl shadow-md flex items-center justify-center gap-2"
+            >
+              <Zap className="h-4 w-4" /> Quick-Start Test Match (Team Badam Hiders)
+            </Button>
+            <Button
+              asChild
+              variant="outline"
+              className="w-full border-slate-700 text-slate-300 hover:text-white hover:bg-slate-800 text-xs h-10 rounded-xl"
+            >
+              <a href="/admin">Manage Roles in Admin Panel</a>
+            </Button>
           </CardContent>
         </Card>
       </div>

@@ -17,8 +17,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Hide and Seek Game', // Renamed
-  description: 'An exciting game of hide and seek, set in a dynamic urban environment.', // Generalized
+  title: 'Jet Lag: Hong Kong — MTR Hide and Seek',
+  description: 'Broadcast-grade transit hide and seek game across 70 Hong Kong MTR stations, featuring AI Referee, curses, radar questions, and 500m proximity breach.',
 };
 
 export default function RootLayout({
@@ -27,8 +27,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+    <html lang="en" className="dark" suppressHydrationWarning>
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground min-h-screen selection:bg-primary/30 selection:text-white`}>
         <GameProvider>
           <AppShell>
             {children}
