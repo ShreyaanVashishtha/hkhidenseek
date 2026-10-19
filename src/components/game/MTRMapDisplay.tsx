@@ -43,6 +43,8 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { useGameContext } from '@/hooks/useGameContext';
 import { MTRGeographicMap } from './MTRGeographicMap';
+import { triggerHaptic } from '@/lib/haptics';
+import { soundEffects } from '@/lib/soundEffects';
 
 interface MTRMapDisplayProps {
   onSelectStation?: (station: MTRStation) => void;
@@ -817,30 +819,42 @@ export function MTRMapDisplay({
 
         {/* Selected Station Floating HUD Panel */}
         {selectedStation && (
-          <div className="absolute bottom-3 left-3 right-3 sm:right-auto sm:w-96 bg-[#0c1324]/95 border border-slate-700/80 rounded-xl p-4 shadow-2xl backdrop-blur-xl z-20 transition-all animate-in fade-in slide-in-from-bottom-2">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="font-bold text-white text-base">
+          <div className="absolute bottom-2 left-2 right-2 sm:right-auto sm:w-96 bg-[#0c1324]/95 border border-slate-700/80 rounded-2xl p-3.5 shadow-2xl backdrop-blur-xl z-30 transition-all animate-in fade-in slide-in-from-bottom-2">
+            <div className="flex items-start justify-between gap-2">
+              <div className="space-y-1">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <h3 className="font-bold text-white text-base leading-tight">
                     {selectedStation.name}
                   </h3>
                   <span className="text-slate-400 text-sm font-normal">
                     {selectedStation.nameZh}
                   </span>
                   {selectedStation.isInterchange && (
-                    <Badge variant="outline" className="bg-sky-950/80 text-sky-400 border-sky-600/40 text-[10px] py-0">
-                      Interchange Hub
+                    <Badge variant="outline" className="bg-sky-950/80 text-sky-400 border-sky-600/40 text-[9px] py-0 px-1.5">
+                      Interchange
+                    </Badge>
+                  )}
+                  {eliminatedStationIds.includes(selectedStation.id) ? (
+                    <Badge variant="destructive" className="text-[9px] py-0 px-1.5 font-bold">
+                      Eliminated
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-[9px] py-0 px-1.5">
+                      Candidate ({remainingCandidatesCount}/{totalStations})
                     </Badge>
                   )}
                 </div>
-                <p className="text-xs text-slate-400 flex items-center gap-1.5 mt-0.5">
-                  <MapPin className="h-3 w-3 text-slate-500" />
-                  {selectedStation.district} District • 500m Hiding Territory
+                <p className="text-[11px] text-slate-400 flex items-center gap-1">
+                  <MapPin className="h-3 w-3 text-slate-500 shrink-0" />
+                  <span>{selectedStation.district} District • 500m Safe Zone</span>
                 </p>
               </div>
 
               <button
-                onClick={() => setInternalSelectedStationId(null)}
+                onClick={() => {
+                  triggerHaptic('light');
+                  setInternalSelectedStationId(null);
+                }}
                 className="text-slate-400 hover:text-white p-1 rounded-md hover:bg-slate-800"
               >
                 <X className="h-4 w-4" />
@@ -848,7 +862,7 @@ export function MTRMapDisplay({
             </div>
 
             {/* Connecting Lines */}
-            <div className="flex flex-wrap items-center gap-1.5 my-3">
+            <div className="flex flex-wrap items-center gap-1.5 my-2.5">
               {selectedStation.lines.map(lineId => {
                 const line = MTR_LINES[lineId];
                 if (!line) return null;
@@ -856,7 +870,7 @@ export function MTRMapDisplay({
                   <Badge
                     key={lineId}
                     style={{ backgroundColor: `${line.color}25`, borderColor: line.color, color: '#fff' }}
-                    className="border text-xs px-2 py-0.5 flex items-center gap-1.5 font-medium"
+                    className="border text-[11px] px-2 py-0.5 flex items-center gap-1.5 font-medium"
                   >
                     <span className="w-2 h-2 rounded-full" style={{ backgroundColor: line.color }} />
                     {line.name} ({line.nameZh})
@@ -866,11 +880,13 @@ export function MTRMapDisplay({
             </div>
 
             {/* Action buttons based on Role */}
-            <div className="flex flex-col gap-2 pt-2 border-t border-slate-800">
+            <div className="flex flex-col gap-2 pt-2 border-t border-slate-800/80">
               {role === 'hider' && (
                 <Button
                   size="sm"
                   onClick={() => {
+                    triggerHaptic('success');
+                    soundEffects.playVictory();
                     onSelectStation?.(selectedStation);
                     lockHiderStation(selectedStation.id);
                     toast({
@@ -878,36 +894,47 @@ export function MTRMapDisplay({
                       description: `Your 500m territory is anchored at ${selectedStation.name} (${selectedStation.nameZh}). Seekers cannot see your location!`,
                     });
                   }}
-                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs h-8 flex items-center justify-center gap-1.5 shadow-md"
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs h-9 flex items-center justify-center gap-1.5 shadow-md rounded-xl"
                 >
-                  <Shield className="h-3.5 w-3.5" />
-                  Lock In As My Hiding Zone
+                  <Shield className="h-4 w-4" />
+                  Lock In As My Safe Zone
                 </Button>
               )}
 
               {role === 'seeker' && (
-                <div className="flex flex-col gap-1.5 w-full">
+                <div className="grid grid-cols-2 gap-2 w-full">
                   <Button
                     size="sm"
                     onClick={() => {
+                      triggerHaptic('light');
                       onSelectStation?.(selectedStation);
                       navigator.clipboard.writeText(`${selectedStation.name} Station`);
                       toast({
                         title: "Targeted for Radar Clue!",
-                        description: `Added "${selectedStation.name} (${selectedStation.nameZh})" to your question prompt.`,
+                        description: `Switched to Ask tab with ${selectedStation.name} selected.`,
                       });
                     }}
-                    className="w-full bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs h-8 flex items-center justify-center gap-1.5"
+                    className="w-full bg-sky-600 hover:bg-sky-500 text-white font-semibold text-xs h-9 flex items-center justify-center gap-1 rounded-xl"
                   >
                     <Compass className="h-3.5 w-3.5" />
-                    Target in Radar Question
+                    Target in Clue
                   </Button>
 
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => toggleEliminateStation(selectedStation.id)}
-                    className={`w-full text-xs h-7 flex items-center justify-center gap-1.5 transition-all ${
+                    onClick={() => {
+                      const isElim = eliminatedStationIds.includes(selectedStation.id);
+                      if (isElim) {
+                        triggerHaptic('success');
+                        soundEffects.playTick();
+                      } else {
+                        triggerHaptic('eliminate');
+                        soundEffects.playTick();
+                      }
+                      toggleEliminateStation(selectedStation.id);
+                    }}
+                    className={`w-full text-xs h-9 font-semibold flex items-center justify-center gap-1 rounded-xl transition-all ${
                       eliminatedStationIds.includes(selectedStation.id)
                         ? 'border-emerald-600/60 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/50'
                         : 'border-rose-600/60 bg-rose-950/40 text-rose-300 hover:bg-rose-900/50'
@@ -916,12 +943,12 @@ export function MTRMapDisplay({
                     {eliminatedStationIds.includes(selectedStation.id) ? (
                       <>
                         <Check className="h-3.5 w-3.5 text-emerald-400" />
-                        Restore As Hiding Candidate
+                        Restore
                       </>
                     ) : (
                       <>
                         <X className="h-3.5 w-3.5 text-rose-400" />
-                        Eliminate From Candidates
+                        Eliminate
                       </>
                     )}
                   </Button>
@@ -933,13 +960,14 @@ export function MTRMapDisplay({
                   size="sm"
                   variant="outline"
                   onClick={() => {
+                    triggerHaptic('light');
                     navigator.clipboard.writeText(selectedStation.name);
                     toast({
                       title: "Station Name Copied",
                       description: `${selectedStation.name} (${selectedStation.nameZh}) copied to clipboard.`,
                     });
                   }}
-                  className="w-full border-slate-700 bg-slate-800/80 text-slate-200 hover:bg-slate-700 text-xs h-8"
+                  className="w-full border-slate-700 bg-slate-800/80 text-slate-200 hover:bg-slate-700 text-xs h-8 rounded-xl"
                 >
                   Copy Station Name
                 </Button>

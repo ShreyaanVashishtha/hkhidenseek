@@ -3,6 +3,8 @@
  * Zero external MP3 downloads, 100% offline-ready, instantaneous response.
  */
 
+import { triggerHaptic } from './haptics';
+
 class SoundSynthesizer {
   private ctx: AudioContext | null = null;
   private enabled: boolean = true;
@@ -37,6 +39,7 @@ class SoundSynthesizer {
    * Ascending coin reward chime
    */
   public playCoin() {
+    triggerHaptic('coin');
     if (!this.enabled) return;
     const ctx = this.getContext();
     if (!ctx) return;
@@ -63,6 +66,7 @@ class SoundSynthesizer {
    * Card draw / whoosh sound
    */
   public playCardDraw() {
+    triggerHaptic('light');
     if (!this.enabled) return;
     const ctx = this.getContext();
     if (!ctx) return;
@@ -89,6 +93,7 @@ class SoundSynthesizer {
    * Curse alarm siren
    */
   public playCurseAlarm() {
+    triggerHaptic('warning');
     if (!this.enabled) return;
     const ctx = this.getContext();
     if (!ctx) return;
@@ -118,6 +123,7 @@ class SoundSynthesizer {
    * 500m Endgame Breach Siren (High-priority warning)
    */
   public playBreachAlarm() {
+    triggerHaptic('breach');
     if (!this.enabled) return;
     const ctx = this.getContext();
     if (!ctx) return;
@@ -172,6 +178,7 @@ class SoundSynthesizer {
    * Victory Fanfare
    */
   public playVictory() {
+    triggerHaptic('success');
     if (!this.enabled) return;
     const ctx = this.getContext();
     if (!ctx) return;

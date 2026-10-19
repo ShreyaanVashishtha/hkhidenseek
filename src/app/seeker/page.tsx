@@ -16,7 +16,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { TimerDisplay } from "@/components/game/TimerDisplay";
 import { VetoConsequenceModal } from "@/components/game/VetoConsequenceModal";
 import { useToast } from '@/hooks/use-toast';
-import { Search, ShieldQuestion, Send, ThumbsUp, ThumbsDown, ListChecks, Zap, Upload, CheckSquare, AlertTriangle, Dice6, Sparkles, Coins, Trophy, Flame, Map, Clock, Target, HelpCircle } from "lucide-react";
+import { Search, ShieldQuestion, Send, ThumbsUp, ThumbsDown, ListChecks, Zap, Upload, CheckSquare, AlertTriangle, Dice6, Sparkles, Coins, Trophy, Flame, Map, Clock, Target, HelpCircle, ArrowLeftRight, MapPin, Camera } from "lucide-react";
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -26,6 +26,8 @@ import { MTR_STATIONS, MTRStation } from "@/lib/mtrData";
 import { ChallengeDeckModal } from "@/components/game/ChallengeDeckModal";
 import { EndgameBreachModal } from "@/components/game/EndgameBreachModal";
 import { MatchTimeline } from "@/components/game/MatchTimeline";
+import { triggerHaptic } from "@/lib/haptics";
+import { soundEffects } from "@/lib/soundEffects";
 
 interface PhotoResponseDisplayProps {
   imageUrl: string; 
@@ -217,6 +219,8 @@ function SeekerPageContent() {
     };
 
     askQuestion(newQuestion); 
+    soundEffects.playCardDraw();
+    triggerHaptic('success');
     toast({ title: "Question Asked!", description: `${selectedQuestionType.name} question sent. Hiders earn ${selectedQuestionType.hiderCoinsEarned} coins.` });
     
     setQuestionText("");
@@ -425,89 +429,166 @@ function SeekerPageContent() {
               <CardDescription className="text-xs">Get clues about the hiders' location. Hiders earn coins when questions are asked.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* Visual Question Category Cards Grid */}
               <div className="space-y-2">
-                <Label htmlFor="question-type" className="text-xs">Question Type</Label>
-                <Select 
-                  onValueChange={(value) => {
-                    const opt = QUESTION_OPTIONS.find(q => q.id === value);
-                    setSelectedQuestionType(opt);
-                    if (opt?.category !== 'Thermometer') {
-                      setStationAId("");
-                      setStationBId("");
-                    }
-                  }}
-                  disabled={isPenaltyActive || (!!currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved')}
-                  value={selectedQuestionType?.id}
-                >
-                  <SelectTrigger id="question-type"><SelectValue placeholder="Select question type" /></SelectTrigger>
-                  <SelectContent>
-                    {QUESTION_OPTIONS.map(q => (
-                      <SelectItem key={q.id} value={q.id}>
-                        {q.name} (Hiders earn +{q.hiderCoinsEarned})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold">Select Question Category</Label>
+                  {selectedQuestionType && (
+                    <Badge variant="outline" className="text-[10px] text-amber-500 border-amber-500/30">
+                      Hiders earn +{selectedQuestionType.hiderCoinsEarned} coins
+                    </Badge>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {QUESTION_OPTIONS.map(q => {
+                    const isSelected = selectedQuestionType?.id === q.id;
+                    const Icon = q.icon || MapPin;
+                    return (
+                      <button
+                        key={q.id}
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          setSelectedQuestionType(q);
+                          if (q.category !== 'Thermometer') {
+                            setStationAId("");
+                            setStationBId("");
+                          }
+                          if (!questionText.trim()) {
+                            if (q.category === 'Radar') setQuestionText("Are you at or near [Station/Line]?");
+                            else if (q.category === 'Scan') setQuestionText("Are you currently on [Line/Region]?");
+                          }
+                        }}
+                        disabled={isPenaltyActive || (!!currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved')}
+                        className={`p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between gap-1.5 ${
+                          isSelected
+                            ? "bg-primary/15 border-primary text-foreground shadow-sm ring-1 ring-primary/40"
+                            : "bg-card/70 border-border hover:bg-muted/60 text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between w-full">
+                          <div className="flex items-center gap-1.5 font-bold text-xs text-foreground">
+                            <Icon className="h-3.5 w-3.5 text-primary" />
+                            <span>{q.name}</span>
+                          </div>
+                          <span className="text-[10px] font-mono text-amber-500 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                            +{q.hiderCoinsEarned}c
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground line-clamp-1">
+                          {q.category === 'Thermometer' ? 'Warmer vs Colder' : q.description}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
+
               {selectedQuestionType && (
-                <p className="text-xs text-muted-foreground">{selectedQuestionType.description}</p>
+                <p className="text-xs text-muted-foreground bg-muted/40 p-2 rounded-lg border border-border/40">
+                  {selectedQuestionType.description}
+                </p>
               )}
 
-              {/* Special Thermometer Station Selectors */}
+              {/* Special Thermometer Station Selectors with Fast Swap */}
               {selectedQuestionType?.category === 'Thermometer' && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-950/60 p-3 rounded-lg border border-slate-800">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-slate-300">Station A (Option 1)</Label>
-                    <Select value={stationAId} onValueChange={setStationAId}>
-                      <SelectTrigger className="bg-slate-900 border-slate-700 text-xs text-white">
-                        <SelectValue placeholder="Choose Station A..." />
-                      </SelectTrigger>
-                      <SelectContent className="bg-slate-900 border-slate-700 text-white text-xs max-h-56">
-                        {Object.values(MTR_STATIONS).map(s => (
-                          <SelectItem key={`stA-${s.id}`} value={s.id}>
-                            {s.name} ({s.nameZh})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                <div className="bg-slate-950/60 p-3 rounded-xl border border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                      <ArrowLeftRight className="h-3.5 w-3.5 text-sky-400" />
+                      Station Distance Comparison
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        const temp = stationAId;
+                        setStationAId(stationBId);
+                        setStationBId(temp);
+                        if (stationBId && temp) {
+                          setQuestionText(`Are you closer to ${MTR_STATIONS[stationBId]?.name} or ${MTR_STATIONS[temp]?.name}?`);
+                        }
+                      }}
+                      className="h-6 text-[10px] px-2 text-sky-400 hover:text-sky-300 hover:bg-sky-950/40"
+                    >
+                      Swap Stations ⇄
+                    </Button>
                   </div>
 
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-slate-300">Station B (Option 2)</Label>
-                    <Select value={stationBId} onValueChange={setStationBId}>
-                      <SelectTrigger className="bg-slate-900 border-slate-700 text-xs text-white">
-                        <SelectValue placeholder="Choose Station B..." />
-                      </SelectTrigger>
-                      <SelectContent className="bg-slate-900 border-slate-700 text-white text-xs max-h-56">
-                        {Object.values(MTR_STATIONS).map(s => (
-                          <SelectItem key={`stB-${s.id}`} value={s.id}>
-                            {s.name} ({s.nameZh})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div className="space-y-1">
+                      <Label className="text-[11px] text-slate-300">Station A</Label>
+                      <Select 
+                        value={stationAId} 
+                        onValueChange={(val) => {
+                          setStationAId(val);
+                          if (stationBId) {
+                            setQuestionText(`Are you closer to ${MTR_STATIONS[val]?.name} or ${MTR_STATIONS[stationBId]?.name}?`);
+                          }
+                        }}
+                      >
+                        <SelectTrigger className="bg-slate-900 border-slate-700 text-xs text-white h-9">
+                          <SelectValue placeholder="Select Station A..." />
+                        </SelectTrigger>
+                        <SelectContent className="bg-slate-900 border-slate-700 text-white text-xs max-h-56">
+                          {Object.values(MTR_STATIONS).map(s => (
+                            <SelectItem key={`stA-${s.id}`} value={s.id}>
+                              {s.name} ({s.nameZh})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-[11px] text-slate-300">Station B</Label>
+                      <Select 
+                        value={stationBId} 
+                        onValueChange={(val) => {
+                          setStationBId(val);
+                          if (stationAId) {
+                            setQuestionText(`Are you closer to ${MTR_STATIONS[stationAId]?.name} or ${MTR_STATIONS[val]?.name}?`);
+                          }
+                        }}
+                      >
+                        <SelectTrigger className="bg-slate-900 border-slate-700 text-xs text-white h-9">
+                          <SelectValue placeholder="Select Station B..." />
+                        </SelectTrigger>
+                        <SelectContent className="bg-slate-900 border-slate-700 text-white text-xs max-h-56">
+                          {Object.values(MTR_STATIONS).map(s => (
+                            <SelectItem key={`stB-${s.id}`} value={s.id}>
+                              {s.name} ({s.nameZh})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
                 </div>
               )}
 
-              <div className="space-y-2">
-                <Label htmlFor="question-text" className="text-xs">Your Question / Location Specifics</Label>
+              <div className="space-y-1.5">
+                <Label htmlFor="question-text" className="text-xs font-semibold">Your Question</Label>
                 <Textarea 
                   id="question-text" 
                   value={questionText}
                   onChange={(e) => setQuestionText(e.target.value)}
-                  placeholder={selectedQuestionType?.seekerPrompt || "Enter your question based on the selected type..."}
+                  placeholder={selectedQuestionType?.seekerPrompt || "Select a category above or tap a station on the map..."}
                   disabled={isPenaltyActive || !selectedQuestionType || (!!currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved')}
+                  className="text-xs min-h-[75px]"
                 />
               </div>
             </CardContent>
-            <CardFooter>
+            <CardFooter className="pt-0">
               <Button 
                 onClick={handleAskQuestion} 
                 disabled={isPenaltyActive || !selectedQuestionType || !questionText.trim() || (!!currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved')} 
-                className="w-full sm:w-auto flex items-center gap-2"
+                className="w-full flex items-center justify-center gap-2 h-10 font-bold"
               >
-                <Send className="h-4 w-4" /> Ask Question
+                <Send className="h-4 w-4" /> Send Question to Hiders
               </Button>
             </CardFooter>
           </Card>

@@ -25,6 +25,8 @@ import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { PinProtectPage } from '@/components/auth/PinProtectPage';
+import { triggerHaptic } from '@/lib/haptics';
+import { soundEffects } from '@/lib/soundEffects';
 
 interface SeekerPhotoDisplayProps {
   photoUrl: string;
@@ -152,6 +154,8 @@ function HiderPageContent() {
     }
 
     await answerQuestion(selectedQuestionToAnswer.id, finalResponse);
+    soundEffects.playCardDraw();
+    triggerHaptic('success');
     
     setSelectedQuestionToAnswer(null);
     setResponseText("");
@@ -176,6 +180,8 @@ function HiderPageContent() {
     }
 
     updateTeamCoins(myTeam.id, CURSE_DICE_COST, 'subtract');
+    soundEffects.playCoin();
+    triggerHaptic('coin');
     setHasPendingRoll(true);
     setRolledCurse(null);
     setHiderCurseInputText("");
@@ -200,6 +206,7 @@ function HiderPageContent() {
 
     const roll = Math.floor(Math.random() * 6) + 1 as 1 | 2 | 3 | 4 | 5 | 6;
     const curseDetails = CURSE_DICE_OPTIONS.find(c => c.number === roll);
+    triggerHaptic('medium');
     if (curseDetails) {
       setRolledCurse(curseDetails);
       setHasPendingRoll(false); 
@@ -225,6 +232,8 @@ function HiderPageContent() {
 
     activateCurse(myTeam.id, rolledCurse.number, rolledCurse.requiresHiderTextInput ? hiderCurseInputText : undefined);
     recordCurseUsed(myTeam.id);
+    soundEffects.playCurseAlarm();
+    triggerHaptic('warning');
 
     toast({ title: "Curse Activated!", description: `${rolledCurse.name} is now active for seekers.` });
     setRolledCurse(null);
@@ -236,6 +245,8 @@ function HiderPageContent() {
       toast({ title: "Error", description: "No seeker photo URL to acknowledge or curse not in correct state.", variant: "destructive" });
       return;
     }
+    soundEffects.playVictory();
+    triggerHaptic('success');
     hiderAcknowledgesSeekerPhoto();
   };
 
@@ -564,6 +575,7 @@ function HiderPageContent() {
                         id="photo-upload"
                         type="file"
                         accept="image/*"
+                        capture="environment"
                         onChange={handlePhotoInputChange}
                         className="file:mr-3 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-primary/20 file:text-primary hover:file:bg-primary/30 text-xs"
                       />

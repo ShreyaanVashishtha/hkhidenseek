@@ -13,6 +13,8 @@ import { GAME_TITLE, NAVIGATION_ITEMS } from "@/lib/constants";
 import { useGameContext } from "@/hooks/useGameContext";
 import { cn } from "@/lib/utils";
 
+import { QuickRulesDrawer } from "@/components/game/QuickRulesDrawer";
+
 const navItems = [
   { href: "/", label: "Home", icon: Home },
   { href: "/admin", label: "Admin", icon: ShieldCheck },
@@ -25,7 +27,6 @@ const navItems = [
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { isMobile, soundEnabled, toggleSound } = useGameContext();
-
 
   const sidebarContent = (
     <ScrollArea className="h-full py-4 px-2">
@@ -45,7 +46,10 @@ export function AppShell({ children }: { children: ReactNode }) {
             <span className="sr-only">Toggle Sound</span>
           </Button>
         </div>
-        <Separator className="my-4 bg-sidebar-border" />
+        <div className="px-2 mb-2">
+          <QuickRulesDrawer />
+        </div>
+        <Separator className="my-3 bg-sidebar-border" />
         <div className="space-y-1">
           {navItems.map((item) => (
             <Button
@@ -87,6 +91,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </span>
           </Link>
           <div className="flex items-center gap-1.5">
+            <QuickRulesDrawer />
             <Button
               variant="ghost"
               size="icon"
