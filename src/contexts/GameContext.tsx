@@ -957,7 +957,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       askedQuestions: [
         {
           id: 'q-demo-1',
-          questionOptionId: 'opt-island-radar',
+          questionOptionId: 'q_radar',
           askingTeamId: testSeekerTeam.id,
           text: 'Are you on Hong Kong Island?',
           category: 'Radar',
@@ -1004,9 +1004,9 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       teams: [testSeekerTeam, testHiderTeam],
       currentRound: testRound,
       gameHistory: [],
-      adminPin: '1234',
-      hiderPin: '0000',
-      seekerPin: '1111',
+      adminPin: prev.adminPin || '113221',
+      hiderPin: undefined,
+      seekerPin: undefined,
     }));
 
     soundEffects.playVictory();
@@ -1043,7 +1043,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     if (actualCurseDetails.requiresSeekerAction === 'photo' && photoFile) {
       toast({ title: "Uploading Curse Photo...", description: "Please wait." });
       const uploadedUrl = await uploadPhotoToSupabaseStorage(photoFile, 'public/curse_photos');
-      if (uploadedUrl && typeof uploadedUrl === 'string' && uploadedUrl.startsWith('http')) {
+      if (uploadedUrl && typeof uploadedUrl === 'string' && (uploadedUrl.startsWith('http') || uploadedUrl.startsWith('data:'))) {
         setGameState(prev => { 
           if (!prev.currentRound?.activeCurse) return prev;
           console.log(`[SEEKER_CURSE_ACTION] Photo uploaded for curse. URL: ${uploadedUrl}. Setting status to pending_hider_acknowledgement.`);

@@ -49,6 +49,7 @@ import { soundEffects } from '@/lib/soundEffects';
 
 interface MTRMapDisplayProps {
   onSelectStation?: (station: MTRStation) => void;
+  onTargetForQuestion?: (station: MTRStation) => void;
   selectedStationId?: string;
   role?: 'hider' | 'seeker' | 'admin' | 'spectator';
   highlightStationIds?: string[];
@@ -57,6 +58,7 @@ interface MTRMapDisplayProps {
 
 export function MTRMapDisplay({
   onSelectStation,
+  onTargetForQuestion,
   selectedStationId: externalSelectedStationId,
   role = 'spectator',
   highlightStationIds = [],
@@ -169,17 +171,26 @@ export function MTRMapDisplay({
     setSearchQuery("");
   };
 
-  // Drag Panning
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button !== 0) return;
+  const dragDistanceRef = useRef(0);
+
+  // Unified Pointer Drag Panning (Mobile touchscreen finger drag + Desktop mouse)
+  const handlePointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
     setIsDragging(true);
+    dragDistanceRef.current = 0;
     setDragStart({ x: e.clientX, y: e.clientY });
+    try {
+      (e.currentTarget as SVGSVGElement).setPointerCapture(e.pointerId);
+    } catch {
+      // safe fallback
+    }
   };
 
-  const handleMouseMove = (e: React.MouseEvent) => {
+  const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
     if (!isDragging || !svgRef.current) return;
     const dx = e.clientX - dragStart.x;
     const dy = e.clientY - dragStart.y;
+    dragDistanceRef.current += Math.hypot(dx, dy);
 
     const svgRect = svgRef.current.getBoundingClientRect();
     const scaleX = viewBox.width / svgRect.width;
@@ -193,8 +204,13 @@ export function MTRMapDisplay({
     setDragStart({ x: e.clientX, y: e.clientY });
   };
 
-  const handleMouseUp = () => {
+  const handlePointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
     setIsDragging(false);
+    try {
+      (e.currentTarget as SVGSVGElement).releasePointerCapture(e.pointerId);
+    } catch {
+      // safe fallback
+    }
   };
 
   const handleWheel = (e: React.WheelEvent) => {
@@ -556,10 +572,10 @@ export function MTRMapDisplay({
             <svg
               ref={svgRef}
               viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
-              onMouseDown={handleMouseDown}
-              onMouseMove={handleMouseMove}
-              onMouseUp={handleMouseUp}
-              onMouseLeave={handleMouseUp}
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerUp}
               onWheel={handleWheel}
               className={`w-full h-full cursor-${isDragging ? 'grabbing' : 'grab'}`}
               style={{ touchAction: 'none' }}
@@ -704,7 +720,10 @@ export function MTRMapDisplay({
               return (
                 <g
                   key={`node-${st.id}`}
-                  onClick={() => handleSelectStation(st)}
+                  onClick={() => {
+                    if (dragDistanceRef.current > 8) return;
+                    handleSelectStation(st);
+                  }}
                   className="cursor-pointer group"
                   opacity={opacity}
                 >
@@ -929,11 +948,13 @@ export function MTRMapDisplay({
                     size="sm"
                     onClick={() => {
                       triggerHaptic('light');
-                      onSelectStation?.(selectedStation);
-                      navigator.clipboard.writeText(`${selectedStation.name} Station`);
+                      onTargetForQuestion?.(selectedStation);
+                      try {
+                        navigator.clipboard.writeText(`${selectedStation.name} Station`);
+                      } catch {}
                       toast({
-                        title: "Targeted for Radar Clue!",
-                        description: `Switched to Ask tab with ${selectedStation.name} selected.`,
+                        title: `Targeted ${selectedStation.name}!`,
+                        description: `Station filled into your question. Switched to Questions tab.`,
                       });
                     }}
                     className="w-full bg-sky-600 hover:bg-sky-500 text-white font-semibold text-[11px] h-9 flex items-center justify-center gap-1 rounded-xl px-1"

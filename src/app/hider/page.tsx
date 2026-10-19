@@ -774,7 +774,8 @@ function HiderPageContent() {
                       phaseStartTime={new Date(globallyActiveCurseInfo.startTime)}
                       isActive={true}
                       onTimerEnd={() => {
-                        toast({ title: "Curse Expired", description: "The time limit on this curse has elapsed." });
+                        clearActiveCurse();
+                        toast({ title: "Curse Expired", description: "The time limit on this curse has elapsed. Seekers are released!" });
                       }}
                       className="text-xs"
                     />
@@ -832,12 +833,11 @@ function HiderPageContent() {
                         className="text-xs h-8 px-2.5 rounded-lg border bg-background font-medium"
                       >
                         <option value="random">🎲 Roll Random 1–6 (Standard)</option>
-                        <option value="1">Die #1: Freeze 15 Mins</option>
-                        <option value="2">Die #2: Silence on Transit</option>
-                        <option value="3">Die #3: Discard & Draw 2 Cards</option>
-                        <option value="4">Die #4: Vending Machine Drink</option>
-                        <option value="5">Die #5: Walk 500 Steps</option>
-                        <option value="6">Die #6: Mascot / MTR Selfie</option>
+                        {CURSE_DICE_OPTIONS.map((curse) => (
+                          <option key={curse.number} value={curse.number.toString()}>
+                            Die #{curse.number}: {curse.name}
+                          </option>
+                        ))}
                       </select>
                     </div>
                   </div>

@@ -198,6 +198,46 @@ export function TestingScenarioLab({ isOpen, onClose }: TestingScenarioLabProps)
     });
   };
 
+  // 4b. AI REFEREE VERDICT SIMULATION
+  const [aiTestResult, setAiTestResult] = useState<{ approved: boolean; title: string; commentary: string; isAiPowered: boolean } | null>(null);
+  const [isTestingAI, setIsTestingAI] = useState(false);
+
+  const handleTestAIReferee = async (verdict: 'approve' | 'reject') => {
+    setIsTestingAI(true);
+    toast({ title: `Calling AI Referee: ${verdict === 'approve' ? 'Testing Approval' : 'Testing Rejection'}...` });
+    try {
+      const res = await fetch('/api/ai/verify-photo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          taskType: 'challenge_proof',
+          taskTitle: 'Photograph Hong Kong Egg Waffles',
+          taskDescription: 'Seekers must purchase and photograph authentic egg waffles on camera.',
+          photoDataUrl: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"><rect width="300" height="200" fill="%230f172a"/><text x="150" y="100" fill="%2338bdf8" font-size="16" font-weight="bold" text-anchor="middle">Egg Waffle Proof</text></svg>',
+          simulatedVerdict: verdict,
+        }),
+      });
+      const data = await res.json();
+      setAiTestResult({
+        approved: data.approved,
+        title: data.verdictTitle,
+        commentary: data.refereeCommentary,
+        isAiPowered: Boolean(data.isAiPowered),
+      });
+      if (data.approved) {
+        soundEffects.playVictory();
+        toast({ title: data.verdictTitle, description: data.refereeCommentary });
+      } else {
+        soundEffects.playCurseAlarm();
+        toast({ title: data.verdictTitle, description: data.refereeCommentary, variant: "destructive" });
+      }
+    } catch (e: any) {
+      toast({ title: "AI Referee Test Failed", description: e.message, variant: "destructive" });
+    } finally {
+      setIsTestingAI(false);
+    }
+  };
+
   // 5. AUTOMATED 10-SECOND DEMO
   const handleRunAutomatedDemo = async () => {
     setIsAutomating(true);
@@ -495,6 +535,61 @@ export function TestingScenarioLab({ isOpen, onClose }: TestingScenarioLabProps)
                   >
                     Test Radar
                   </Button>
+                </div>
+
+                {/* 4. AI REFEREE VERIFICATION */}
+                <div className="p-3 rounded-xl border bg-card space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-bold text-xs text-foreground flex items-center gap-1.5">
+                        <Sparkles className="h-3.5 w-3.5 text-purple-500" />
+                        AI Clue Referee Verification Test
+                      </h4>
+                      <p className="text-[11px] text-muted-foreground">
+                        Simulate both positive approval and negative rejection verdicts with Jet Lag referee commentary.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <Button
+                      size="sm"
+                      onClick={() => handleTestAIReferee('approve')}
+                      disabled={isTestingAI}
+                      className="h-8 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl shadow-xs"
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+                      Test Positive Verdict (Approve)
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => handleTestAIReferee('reject')}
+                      disabled={isTestingAI}
+                      variant="outline"
+                      className="h-8 text-xs font-bold border-rose-500/40 text-rose-500 hover:bg-rose-950/20 rounded-xl"
+                    >
+                      <XCircle className="h-3.5 w-3.5 mr-1" />
+                      Test Negative Verdict (Reject)
+                    </Button>
+                  </div>
+
+                  {aiTestResult && (
+                    <div className={`p-3 rounded-xl border text-xs space-y-1 mt-2 ${
+                      aiTestResult.approved 
+                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' 
+                        : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+                    }`}>
+                      <div className="font-bold flex items-center justify-between">
+                        <span>{aiTestResult.title}</span>
+                        <Badge variant="outline" className="text-[10px] font-mono">
+                          {aiTestResult.isAiPowered ? 'Gemini 2.0' : 'Referee Fallback'}
+                        </Badge>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground leading-relaxed">
+                        {aiTestResult.commentary}
+                      </p>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>

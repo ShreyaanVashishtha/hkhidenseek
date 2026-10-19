@@ -19,6 +19,7 @@ import { CURSE_DICE_OPTIONS } from '@/lib/constants';
 import { ActiveCurseInfo } from '@/lib/types';
 import { TimerDisplay } from './TimerDisplay';
 import { triggerHaptic } from '@/lib/haptics';
+import { useGameContext } from '@/hooks/useGameContext';
 
 interface CurseKlaxonModalProps {
   activeCurse: ActiveCurseInfo | null;
@@ -31,6 +32,7 @@ export function CurseKlaxonModal({
   onCompleteCursePhoto,
   onAcknowledgeCurse,
 }: CurseKlaxonModalProps) {
+  const { clearActiveCurse } = useGameContext();
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -104,7 +106,9 @@ export function CurseKlaxonModal({
                   durationMinutes={curseDetails.durationMinutes}
                   phaseStartTime={new Date(activeCurse.startTime)}
                   isActive={true}
-                  onTimerEnd={() => {}}
+                  onTimerEnd={() => {
+                    clearActiveCurse();
+                  }}
                   className="text-xs py-1 px-3"
                 />
               </div>

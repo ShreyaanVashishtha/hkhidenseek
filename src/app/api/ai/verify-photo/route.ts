@@ -46,11 +46,23 @@ export async function POST(req: Request) {
 
     const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
 
-    // Extract base64 and mime type from data URL
+    // Extract base64 and mime type from data URL or remote URL
     let mimeType = 'image/jpeg';
     let base64Data = photoDataUrl;
 
-    if (photoDataUrl.startsWith('data:')) {
+    if (photoDataUrl.startsWith('http://') || photoDataUrl.startsWith('https://')) {
+      try {
+        const imageRes = await fetch(photoDataUrl);
+        if (imageRes.ok) {
+          const contentType = imageRes.headers.get('content-type');
+          if (contentType) mimeType = contentType;
+          const arrayBuffer = await imageRes.arrayBuffer();
+          base64Data = Buffer.from(arrayBuffer).toString('base64');
+        }
+      } catch (fetchErr) {
+        console.warn('[AI Referee] Failed to fetch image from URL:', fetchErr);
+      }
+    } else if (photoDataUrl.startsWith('data:')) {
       const matches = photoDataUrl.match(/^data:([^;]+);base64,(.+)$/);
       if (matches) {
         mimeType = matches[1];
@@ -58,13 +70,13 @@ export async function POST(req: Request) {
       }
     }
 
-    // If photo is tiny (< 1000 characters) or blank, immediately reject
-    if (base64Data.length < 800) {
+    // If photo is tiny (< 500 characters base64) or corrupt, reject
+    if (!base64Data || base64Data.length < 500) {
       return NextResponse.json({
         approved: false,
         confidence: 99,
         verdictTitle: 'REJECTED: Blank or Corrupt Photo ❌',
-        refereeCommentary: 'Ben & Adam in the booth: That photo is essentially blank or corrupt. No evidence detected. Yellow card on the play!',
+        refereeCommentary: 'Ben & Adam in the booth: That photo has insufficient image data or is corrupt. No evidence detected. Yellow card on the play!',
         detectedElements: ['Blank Screen', 'No Recognizable Objects'],
         isAiPowered: false,
       });

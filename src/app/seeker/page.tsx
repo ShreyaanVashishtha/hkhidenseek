@@ -43,12 +43,11 @@ const PhotoResponseDisplay: React.FC<PhotoResponseDisplayProps> = ({ imageUrl })
 
   return (
     <div className="mt-2">
-      <Image 
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img 
         src={imageUrl} 
         alt="Hider's photo response" 
-        width={300} 
-        height={225} 
-        className="rounded-md border object-contain" 
+        className="max-h-64 max-w-full rounded-xl border border-border object-contain shadow-md" 
         data-ai-hint="response image"
       />
     </div>
@@ -207,10 +206,6 @@ function SeekerPageContent() {
     }
     if (isPenaltyActive) {
         toast({ title: "Penalty Active", description: "Cannot ask questions during a freeze penalty.", variant: "destructive"});
-        return;
-    }
-    if (currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved') {
-        toast({ title: "Curse Active", description: "Cannot ask questions while a curse is active. Resolve the curse first.", variant: "destructive"});
         return;
     }
 
@@ -513,12 +508,15 @@ function SeekerPageContent() {
             <MTRMapDisplay 
               role="seeker"
               onSelectStation={(station: MTRStation) => {
+                // Keep seeker on map to freely inspect, pan, mark suspect, and eliminate
+              }}
+              onTargetForQuestion={(station: MTRStation) => {
                 setQuestionText((prev: string) => 
                   prev ? `${prev}, ${station.name} (${station.nameZh})` : `${station.name} (${station.nameZh})`
                 );
                 setActiveTab('questions');
                 toast({
-                  title: `${station.name} Selected`,
+                  title: `${station.name} Targeted!`,
                   description: "Switched to Questions tab with station name filled in."
                 });
               }}
@@ -576,7 +574,7 @@ function SeekerPageContent() {
                             else if (q.category === 'Scan') setQuestionText("Are you currently on [Line/Region]?");
                           }
                         }}
-                        disabled={isPenaltyActive || (!!currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved')}
+                        disabled={isPenaltyActive}
                         className={`p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between gap-1.5 ${
                           isSelected
                             ? "bg-primary/15 border-primary text-foreground shadow-sm ring-1 ring-primary/40"
@@ -724,7 +722,7 @@ function SeekerPageContent() {
                       {q.response && (
                         <div className="mt-2 text-xs text-accent-foreground bg-accent/20 p-2 rounded-md">
                           <strong>Hider Response:</strong> 
-                          {q.category === "Photo" && typeof q.response === 'string' && q.response.startsWith('http')
+                          {q.category === "Photo" && typeof q.response === 'string' && (q.response.startsWith('http') || q.response.startsWith('data:'))
                             ? <PhotoResponseDisplay imageUrl={q.response} /> 
                             : typeof q.response === 'string'
                               ? <span className="ml-1">{q.response}</span>
