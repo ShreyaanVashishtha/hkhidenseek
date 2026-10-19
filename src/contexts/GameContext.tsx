@@ -180,6 +180,8 @@ interface GameContextType extends GameState {
   answerQuestion: (questionId: string, response: string | File) => Promise<void>;
   activateCurse: (hiderTeamId: string, rolledCurseNumber: number, hiderInputText?: string) => void;
   recordCurseUsed: (hiderTeamId: string) => void;
+  rollAndActivateCurse: (hiderTeamId?: string, forcedCurseNumber?: number, customInput?: string) => Promise<CurseRule | null>;
+  seedSimulatedMatch: (options?: { phase?: 'hiding-phase' | 'seeking-phase' | 'completed'; hiderStationId?: string }) => void;
   clearActiveCurse: () => void;
   seekerCompletesCurseAction: (photoFile?: File) => Promise<void>;
   hiderAcknowledgesSeekerPhoto: () => void;
@@ -817,6 +819,204 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     });
   }, [setGameState, toast]);
 
+  const rollAndActivateCurse = useCallback(async (hiderTeamId?: string, forcedCurseNumber?: number, customInput?: string): Promise<CurseRule | null> => {
+    const currentState = gameStateRef.current;
+    if (!currentState.currentRound) {
+      toast({ title: "No Active Round", description: "Start a round to roll curse dice.", variant: "destructive" });
+      return null;
+    }
+
+    const hidingTeam = currentState.teams.find(t => t.id === hiderTeamId) || 
+                       currentState.teams.find(t => t.isHiding) || 
+                       currentState.currentRound.hidingTeam;
+
+    if (!hidingTeam) {
+      toast({ title: "Hiding Team Required", description: "No hiding team active in this round.", variant: "destructive" });
+      return null;
+    }
+
+    // Determine die roll: 1 through 6
+    const rollNumber = forcedCurseNumber ? Math.min(6, Math.max(1, forcedCurseNumber)) : (Math.floor(Math.random() * 6) + 1);
+    const curseDetails = CURSE_DICE_OPTIONS.find(c => c.number === rollNumber);
+    if (!curseDetails) return null;
+
+    soundEffects.playCurseAlarm();
+    triggerHaptic('warning');
+
+    setGameState(prev => {
+      if (!prev.currentRound) return prev;
+
+      const activeCurseInfo: ActiveCurseInfo = {
+        curseId: rollNumber,
+        startTime: new Date(),
+        resolutionStatus: 'pending_seeker_action',
+        hiderInputText: customInput || (curseDetails.requiresHiderTextInput ? 'Standard Transit Restriction' : undefined),
+      };
+
+      // Deduct coins & increment cursesUsed on hiding team
+      const updatedTeams = prev.teams.map(t => {
+        if (t.id === hidingTeam.id || t.isHiding) {
+          return {
+            ...t,
+            coins: Math.max(0, t.coins - CURSE_DICE_COST),
+            cursesUsed: (t.cursesUsed || 0) + 1,
+          };
+        }
+        return t;
+      });
+
+      const updatedHidingTeam = prev.currentRound.hidingTeam ? {
+        ...prev.currentRound.hidingTeam,
+        coins: Math.max(0, prev.currentRound.hidingTeam.coins - CURSE_DICE_COST),
+        cursesUsed: (prev.currentRound.hidingTeam.cursesUsed || 0) + 1,
+      } : undefined;
+
+      const existingTimeline = prev.currentRound.timeline || [];
+      const newEvent: TimelineEvent = {
+        id: `tl-${Date.now()}`,
+        timestamp: new Date(),
+        type: 'curse_activated',
+        title: `Curse #${rollNumber}: ${curseDetails.name}`,
+        description: `Hiders rolled a ${rollNumber}! ${curseDetails.description}`,
+        badge: `Curse #${rollNumber}`,
+        teamRole: 'hider',
+      };
+
+      return {
+        ...prev,
+        teams: updatedTeams,
+        currentRound: {
+          ...prev.currentRound,
+          activeCurse: activeCurseInfo,
+          hidingTeam: updatedHidingTeam || prev.currentRound.hidingTeam,
+          timeline: [...existingTimeline, newEvent],
+        },
+      };
+    });
+
+    toast({
+      title: `🎲 Rolled #${curseDetails.number}: ${curseDetails.name}!`,
+      description: `Curse is now active on seekers. (-${CURSE_DICE_COST} coins)`,
+    });
+
+    return curseDetails;
+  }, [setGameState, toast]);
+
+  const seedSimulatedMatch = useCallback((options?: { phase?: 'hiding-phase' | 'seeking-phase' | 'completed'; hiderStationId?: string }) => {
+    const phase = options?.phase || 'seeking-phase';
+    const lockedStation = options?.hiderStationId || 'CEN'; // Central Station
+
+    const testSeekerTeam: Team = {
+      id: 'team-seekers-test',
+      name: 'Team Ben & Adam',
+      isSeeking: true,
+      isHiding: false,
+      players: [
+        { id: 'p1', name: 'Ben Doyle' },
+        { id: 'p2', name: 'Adam Chase' },
+      ],
+      coins: 300,
+      hidingTimeSeconds: 0,
+      cursesUsed: 0,
+    };
+
+    const testHiderTeam: Team = {
+      id: 'team-hiders-test',
+      name: 'Team Badam (Hiders)',
+      isSeeking: false,
+      isHiding: true,
+      players: [
+        { id: 'p3', name: 'Sam Denby' },
+        { id: 'p4', name: 'Guest Star' },
+      ],
+      coins: 200,
+      hidingTimeSeconds: 1800,
+      cursesUsed: 0,
+    };
+
+    const sampleBeacon: BeaconPing = {
+      id: `ping-${Date.now()}`,
+      timestamp: new Date(),
+      district: 'Central & Western',
+      lineName: 'Island Line',
+      message: 'Periodic cell tower ping from Central & Western district.',
+    };
+
+    const testRound: GameRound = {
+      roundNumber: 1,
+      startTime: new Date(Date.now() - 45 * 60 * 1000),
+      phaseStartTime: new Date(Date.now() - 15 * 60 * 1000),
+      status: phase,
+      seekingTeams: [testSeekerTeam],
+      hidingTeam: testHiderTeam,
+      activeCurse: null,
+      lockedHiderStationId: lockedStation,
+      eliminatedStationIds: ['TWW', 'CHW', 'SKW', 'SWH'],
+      suspectStationIds: ['ADM', 'CEN', 'SHW'],
+      beaconPings: [sampleBeacon],
+      askedQuestions: [
+        {
+          id: 'q-demo-1',
+          questionOptionId: 'opt-island-radar',
+          askingTeamId: testSeekerTeam.id,
+          text: 'Are you on Hong Kong Island?',
+          category: 'Radar',
+          timestamp: new Date(Date.now() - 10 * 60 * 1000),
+          response: 'Yes',
+        },
+      ],
+      timeline: [
+        {
+          id: 'tl-1',
+          timestamp: new Date(Date.now() - 45 * 60 * 1000),
+          type: 'round_start',
+          title: 'Round 1 Initialized (Test Match)',
+          description: 'Team Badam is hiding in Hong Kong. Seekers prepare!',
+          badge: 'Round 1',
+        },
+        {
+          id: 'tl-2',
+          timestamp: new Date(Date.now() - 15 * 60 * 1000),
+          type: 'seeking_start',
+          title: 'Seeking Phase Commenced',
+          description: 'Hiding time expired. Seekers are released into the MTR!',
+          badge: 'Seeking Phase',
+        },
+      ],
+    };
+
+    if (phase === 'completed') {
+      testRound.tagEvent = {
+        taggedAt: new Date(),
+        taggedByTeamId: testSeekerTeam.id,
+        photoUrl: 'https://images.unsplash.com/photo-1517649763962-0c623266ddc0?auto=format&fit=crop&w=600&q=80',
+      };
+    }
+
+    setGameState(prev => ({
+      ...prev,
+      players: [
+        { id: 'p1', name: 'Ben Doyle' },
+        { id: 'p2', name: 'Adam Chase' },
+        { id: 'p3', name: 'Sam Denby' },
+        { id: 'p4', name: 'Guest Star' },
+      ],
+      teams: [testSeekerTeam, testHiderTeam],
+      currentRound: testRound,
+      gameHistory: [],
+      adminPin: '1234',
+      hiderPin: '0000',
+      seekerPin: '1111',
+    }));
+
+    soundEffects.playVictory();
+    triggerHaptic('success');
+    toast({
+      title: '🌱 Test Match Initialized!',
+      description: `Active match seeded: Seeking Phase, Central Station safe zone, 300 seeker coins.`,
+    });
+  }, [setGameState, toast]);
+
   const clearActiveCurse = useCallback(() => {
     setGameState(prev => {
       if (!prev.currentRound || !prev.currentRound.activeCurse) return prev;
@@ -1429,6 +1629,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       answerQuestion,
       activateCurse,
       recordCurseUsed,
+      rollAndActivateCurse,
+      seedSimulatedMatch,
       clearActiveCurse,
       seekerCompletesCurseAction,
       hiderAcknowledgesSeekerPhoto,

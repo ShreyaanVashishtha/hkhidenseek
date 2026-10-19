@@ -55,6 +55,8 @@ function HiderPageContent() {
     answerQuestion,
     activateCurse,
     recordCurseUsed,
+    rollAndActivateCurse,
+    clearActiveCurse,
     hiderAcknowledgesSeekerPhoto,
     isLoadingState, // Get loading state
     transmitHiderBeacon,
@@ -71,9 +73,8 @@ function HiderPageContent() {
   const [responsePhotoPreview, setResponsePhotoPreview] = useState<string | null>(null);
   const [yesNoResponse, setYesNoResponse] = useState<"yes" | "no" | undefined>(undefined);
 
-  const [rolledCurse, setRolledCurse] = useState<CurseRule | null>(null);
-  const [hasPendingRoll, setHasPendingRoll] = useState(false);
   const [hiderCurseInputText, setHiderCurseInputText] = useState("");
+  const [selectedTestDie, setSelectedTestDie] = useState<string>("random");
   const [hiderTab, setHiderTab] = useState<'map' | 'questions' | 'curses' | 'timeline'>('map');
 
 
@@ -86,26 +87,7 @@ function HiderPageContent() {
     } else {
       determinedTeam = teams.find(t => t.isHiding);
     }
-     setMyTeam(determinedTeam);
-
-    const globallyActiveCurseInfo = currentRound?.activeCurse;
-
-    if (globallyActiveCurseInfo && globallyActiveCurseInfo.resolutionStatus !== 'resolved') {
-      const globalCurseDetails = CURSE_DICE_OPTIONS.find(c => c.number === globallyActiveCurseInfo.curseId);
-      if (globalCurseDetails) {
-        if (!rolledCurse || rolledCurse.number !== globalCurseDetails.number || (globallyActiveCurseInfo.hiderInputText && hiderCurseInputText !== globallyActiveCurseInfo.hiderInputText)) {
-            setRolledCurse(globalCurseDetails);
-        }
-        setHasPendingRoll(false); 
-        setHiderCurseInputText(globallyActiveCurseInfo.hiderInputText || "");
-      }
-    } else if (!globallyActiveCurseInfo && !hasPendingRoll && rolledCurse) {
-      setRolledCurse(null);
-      setHiderCurseInputText("");
-    } else if (!globallyActiveCurseInfo && !hasPendingRoll && !rolledCurse) {
-      setHiderCurseInputText("");
-    }
-
+    setMyTeam(determinedTeam);
   }, [teams, currentRound]);
 
   const handlePhotoInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -169,79 +151,26 @@ function HiderPageContent() {
     setYesNoResponse(undefined);
   };
 
-  const handleBuyCurseDice = () => {
-    if (!myTeam) return;
+  const handleRollAndDeployCurse = async () => {
+    if (!myTeam) {
+      toast({ title: "No Hiding Team", description: "You must be on the hiding team to roll curses.", variant: "destructive" });
+      return;
+    }
     if (myTeam.coins < CURSE_DICE_COST) {
       toast({ title: "Not enough coins!", description: `You need ${CURSE_DICE_COST} coins. You have ${myTeam.coins}.`, variant: "destructive" });
       return;
     }
     if ((myTeam.cursesUsed || 0) >= MAX_CURSES_PER_ROUND) {
-      toast({ title: "Max Curses Used", description: `You have already used curse dice ${MAX_CURSES_PER_ROUND} times this round.`, variant: "destructive" });
-      return;
-    }
-    if ((currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved') || rolledCurse || hasPendingRoll) {
-      toast({ title: "Roll Pending or Curse Active", description: "A dice roll is pending activation, a curse is already globally active, or you've already bought dice.", variant: "destructive" });
-      return;
-    }
-
-    updateTeamCoins(myTeam.id, CURSE_DICE_COST, 'subtract');
-    soundEffects.playCoin();
-    triggerHaptic('coin');
-    setHasPendingRoll(true);
-    setRolledCurse(null);
-    setHiderCurseInputText("");
-    toast({ title: "Curse Dice Purchased!", description: `-${CURSE_DICE_COST} coins. Roll the dice!` });
-  };
-
-  const handleRollCurseDice = () => {
-    if (!myTeam || !hasPendingRoll) {
-      toast({ title: "Cannot Roll", description: "Buy curse dice first.", variant: "destructive" });
-      return;
-    }
-    if ((myTeam.cursesUsed || 0) >= MAX_CURSES_PER_ROUND) {
-      toast({ title: "Max Curses Used", description: `Cannot roll, max curses for this round reached.`, variant: "destructive" });
-      setHasPendingRoll(false);
+      toast({ title: "Max Curses Used", description: `You have reached the limit of ${MAX_CURSES_PER_ROUND} curses this round.`, variant: "destructive" });
       return;
     }
     if (currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved') {
-      toast({ title: "Cannot Roll", description: "A curse is already active globally for this round.", variant: "destructive" });
-      setHasPendingRoll(false);
+      toast({ title: "Curse Already Active", description: "Seekers are currently under an active curse handicap. Wait for resolution or clear it.", variant: "destructive" });
       return;
     }
 
-    const roll = Math.floor(Math.random() * 6) + 1 as 1 | 2 | 3 | 4 | 5 | 6;
-    const curseDetails = CURSE_DICE_OPTIONS.find(c => c.number === roll);
-    triggerHaptic('medium');
-    if (curseDetails) {
-      setRolledCurse(curseDetails);
-      setHasPendingRoll(false); 
-      setHiderCurseInputText("");
-      toast({ title: "Dice Rolled!", description: `You got: ${curseDetails.name}. Confirm to activate.` });
-    }
-  };
-
-  const handleActivateRolledCurse = () => {
-    if (!myTeam || !rolledCurse || (currentRound?.activeCurse && currentRound.activeCurse.resolutionStatus !== 'resolved')) {
-      toast({ title: "Activation Error", description: "No curse rolled or a curse is already active.", variant: "destructive" });
-      return;
-    }
-    if ((myTeam.cursesUsed || 0) >= MAX_CURSES_PER_ROUND) {
-      toast({ title: "Max Curses Used", description: `Cannot activate, max curses for this round reached.`, variant: "destructive" });
-      setRolledCurse(null);
-      return;
-    }
-    if (rolledCurse.requiresHiderTextInput && !hiderCurseInputText.trim()) {
-      toast({ title: "Input Required", description: `Please provide details for ${rolledCurse.name}.`, variant: "destructive" });
-      return;
-    }
-
-    activateCurse(myTeam.id, rolledCurse.number, rolledCurse.requiresHiderTextInput ? hiderCurseInputText : undefined);
-    recordCurseUsed(myTeam.id);
-    soundEffects.playCurseAlarm();
-    triggerHaptic('warning');
-
-    toast({ title: "Curse Activated!", description: `${rolledCurse.name} is now active for seekers.` });
-    setRolledCurse(null);
+    const forced = selectedTestDie !== "random" ? parseInt(selectedTestDie, 10) : undefined;
+    await rollAndActivateCurse(myTeam.id, forced, hiderCurseInputText.trim() || undefined);
     setHiderCurseInputText("");
   };
 
@@ -361,11 +290,9 @@ function HiderPageContent() {
     ? currentRound.activeCurse
     : null;
 
-  const displayedActiveCurseDetails = (globallyActiveCurseInfo || rolledCurse)
-    ? CURSE_DICE_OPTIONS.find(c => c.number === (globallyActiveCurseInfo?.curseId || rolledCurse!.number))
+  const displayedActiveCurseDetails = globallyActiveCurseInfo
+    ? CURSE_DICE_OPTIONS.find(c => c.number === globallyActiveCurseInfo.curseId)
     : null;
-
-  const isLocallyRolledCurseDisplayed = rolledCurse && !globallyActiveCurseInfo;
 
 
   const lockedHiderStation = currentRound?.lockedHiderStationId ? MTR_STATIONS[currentRound.lockedHiderStationId] : null;
@@ -472,7 +399,7 @@ function HiderPageContent() {
           >
             <Zap className="h-3.5 w-3.5" />
             <span>Curse Dice</span>
-            {Boolean(globallyActiveCurseInfo || rolledCurse) && (
+            {Boolean(globallyActiveCurseInfo) && (
               <span className="w-2 h-2 rounded-full bg-purple-500 absolute top-1 right-2 sm:static sm:w-1.5 sm:h-1.5" />
             )}
           </button>
@@ -754,116 +681,173 @@ function HiderPageContent() {
 
       {hiderTab === 'curses' && (
         <div className="space-y-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Zap className="h-5 w-5 text-purple-500" />
-                  Curse Dice
-                </CardTitle>
-                <Badge variant="secondary" className="text-xs">
-                  {myTeam?.cursesUsed ?? 0} / {MAX_CURSES_PER_ROUND} Used
-                </Badge>
-              </div>
-              <CardDescription className="text-xs">
-                Roll the Jet Lag Curse Dice to handicap the seekers (Cost: {CURSE_DICE_COST} coins).
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <Button
-                  onClick={handleBuyCurseDice}
-                  disabled={!myTeam || myTeam.coins < CURSE_DICE_COST || (myTeam.cursesUsed || 0) >= MAX_CURSES_PER_ROUND || hasPendingRoll || !!globallyActiveCurseInfo || !!rolledCurse}
-                  className="w-full flex items-center justify-center gap-2 text-xs"
-                >
-                  <Dice5 className="h-4 w-4" /> Buy ({CURSE_DICE_COST} coins)
-                </Button>
-                <Button
-                  onClick={handleRollCurseDice}
-                  disabled={!myTeam || !hasPendingRoll || (myTeam.cursesUsed || 0) >= MAX_CURSES_PER_ROUND || !!rolledCurse || !!globallyActiveCurseInfo}
-                  variant="outline"
-                  className="w-full flex items-center justify-center gap-2 text-xs font-bold"
-                >
-                  🎲 Roll Dice!
-                </Button>
-              </div>
-
-              {isLocallyRolledCurseDisplayed && displayedActiveCurseDetails && (
-                <div className="p-4 border rounded-xl bg-purple-500/10 border-purple-500/30 space-y-3">
-                  <div className="flex items-center gap-2 text-base font-bold text-purple-700 dark:text-purple-300">
-                    {displayedActiveCurseDetails.icon && <displayedActiveCurseDetails.icon className="h-5 w-5" />}
-                    <span>Rolled: #{displayedActiveCurseDetails.number} - {displayedActiveCurseDetails.name}</span>
-                  </div>
-                  <p className="text-xs text-foreground">{displayedActiveCurseDetails.description}</p>
-                  <p className="text-xs text-muted-foreground"><strong>Effect:</strong> {displayedActiveCurseDetails.effect}</p>
-
-                  {displayedActiveCurseDetails.requiresHiderTextInput && (
-                    <div className="space-y-1.5 pt-1">
-                      <Label htmlFor="hider-curse-input" className="text-xs font-semibold">Provide Details (e.g., Animal Category):</Label>
-                      <Textarea
-                        id="hider-curse-input"
-                        value={hiderCurseInputText}
-                        onChange={(e) => setHiderCurseInputText(e.target.value)}
-                        placeholder="Enter required curse details..."
-                        className="bg-background text-xs"
-                      />
+          {/* 1. ACTIVE CURSE DISPLAY (If one is currently active) */}
+          {globallyActiveCurseInfo && displayedActiveCurseDetails ? (
+            <Card className="border-purple-500/50 bg-gradient-to-br from-purple-950/20 via-card to-amber-950/10 shadow-lg">
+              <CardHeader className="pb-3 border-b border-purple-500/20">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-xl bg-purple-500/20 text-purple-400 border border-purple-500/30">
+                      {displayedActiveCurseDetails.icon ? <displayedActiveCurseDetails.icon className="h-5 w-5" /> : <Zap className="h-5 w-5" />}
                     </div>
-                  )}
+                    <div>
+                      <Badge className="bg-purple-600 text-white text-[10px] font-bold">
+                        ACTIVE ON SEEKERS
+                      </Badge>
+                      <CardTitle className="text-base font-black text-foreground pt-0.5">
+                        #{displayedActiveCurseDetails.number}: {displayedActiveCurseDetails.name}
+                      </CardTitle>
+                    </div>
+                  </div>
                   <Button
-                    onClick={handleActivateRolledCurse}
-                    disabled={(myTeam?.cursesUsed || 0) >= MAX_CURSES_PER_ROUND || !!globallyActiveCurseInfo || (displayedActiveCurseDetails.requiresHiderTextInput && !hiderCurseInputText.trim())}
-                    className="w-full bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      clearActiveCurse();
+                      toast({ title: "Curse Cleared", description: "Active curse has been ended." });
+                    }}
+                    className="h-7 text-xs text-muted-foreground hover:text-destructive"
                   >
-                    Activate {displayedActiveCurseDetails.name} on Seekers
+                    Clear Curse
                   </Button>
                 </div>
-              )}
-
-              {globallyActiveCurseInfo && displayedActiveCurseDetails && !isLocallyRolledCurseDisplayed && (
-                <div className="p-4 border rounded-xl bg-amber-500/10 border-amber-500/30 space-y-3">
-                  <div className="flex items-center gap-2 text-base font-bold text-amber-700 dark:text-amber-300">
-                    {displayedActiveCurseDetails.icon && <displayedActiveCurseDetails.icon className="h-5 w-5" />}
-                    <span>Active: {displayedActiveCurseDetails.name}</span>
-                  </div>
-                  <p className="text-xs text-foreground">{displayedActiveCurseDetails.description}</p>
+              </CardHeader>
+              <CardContent className="space-y-3 pt-3">
+                <p className="text-xs text-foreground font-medium">{displayedActiveCurseDetails.description}</p>
+                <div className="p-2.5 rounded-lg bg-muted/60 text-xs text-muted-foreground space-y-1">
+                  <p><strong>Seeker Penalty:</strong> {displayedActiveCurseDetails.effect}</p>
                   {globallyActiveCurseInfo.hiderInputText && (
-                    <p className="text-xs"><strong>Your Instruction:</strong> {globallyActiveCurseInfo.hiderInputText}</p>
-                  )}
-                  <p className="text-xs text-muted-foreground"><strong>Effect:</strong> {displayedActiveCurseDetails.effect}</p>
-
-                  {displayedActiveCurseDetails.durationMinutes && globallyActiveCurseInfo.startTime && globallyActiveCurseInfo.resolutionStatus === 'pending_seeker_action' && (
-                    <div className="pt-2">
-                      <TimerDisplay
-                        title="Curse Active For"
-                        durationMinutes={displayedActiveCurseDetails.durationMinutes}
-                        phaseStartTime={new Date(globallyActiveCurseInfo.startTime)}
-                        isActive={!!globallyActiveCurseInfo && globallyActiveCurseInfo.resolutionStatus === 'pending_seeker_action'}
-                        onTimerEnd={() => {}}
-                        className="text-xs"
-                      />
-                    </div>
-                  )}
-
-                  {displayedActiveCurseDetails.requiresSeekerAction === 'photo' && globallyActiveCurseInfo.seekerSubmittedPhotoUrl && globallyActiveCurseInfo.resolutionStatus === 'pending_hider_acknowledgement' && (
-                    <div className="space-y-2 p-3 bg-background rounded-lg border border-dashed">
-                      <SeekerPhotoDisplay photoUrl={globallyActiveCurseInfo.seekerSubmittedPhotoUrl} />
-                      <Button onClick={handleHiderAcknowledgePhoto} className="w-full mt-2 flex items-center justify-center gap-2 text-xs">
-                        <CheckCircle className="h-4 w-4" /> Accept Seeker's Photo & End Curse
-                      </Button>
-                    </div>
-                  )}
-
-                  {displayedActiveCurseDetails.requiresSeekerAction === 'photo' && !globallyActiveCurseInfo.seekerSubmittedPhotoUrl && globallyActiveCurseInfo.resolutionStatus === 'pending_seeker_action' && (
-                    <p className="text-xs text-muted-foreground italic">Waiting for seeker to submit curse completion photo...</p>
-                  )}
-
-                  {globallyActiveCurseInfo.resolutionStatus === 'resolved' && (
-                    <p className="text-xs text-emerald-600 font-semibold flex items-center gap-1">
-                      <CheckCircle className="h-4 w-4" /> Curse has been resolved.
+                    <p className="text-purple-600 dark:text-purple-300 font-semibold">
+                      <strong>Your Custom Rule:</strong> "{globallyActiveCurseInfo.hiderInputText}"
                     </p>
                   )}
                 </div>
-              )}
+
+                {displayedActiveCurseDetails.durationMinutes && globallyActiveCurseInfo.startTime && (
+                  <div className="pt-1">
+                    <TimerDisplay
+                      title="Curse Duration Remaining"
+                      durationMinutes={displayedActiveCurseDetails.durationMinutes}
+                      phaseStartTime={new Date(globallyActiveCurseInfo.startTime)}
+                      isActive={true}
+                      onTimerEnd={() => {
+                        toast({ title: "Curse Expired", description: "The time limit on this curse has elapsed." });
+                      }}
+                      className="text-xs"
+                    />
+                  </div>
+                )}
+
+                {/* Seeker Photo Submission Review */}
+                {displayedActiveCurseDetails.requiresSeekerAction === 'photo' && (
+                  globallyActiveCurseInfo.seekerSubmittedPhotoUrl ? (
+                    <div className="space-y-2 p-3 bg-card rounded-xl border border-dashed border-emerald-500/40">
+                      <div className="flex items-center gap-2 text-xs font-bold text-emerald-600">
+                        <CheckCircle className="h-4 w-4" /> Seeker Submitted Photo Proof:
+                      </div>
+                      <SeekerPhotoDisplay photoUrl={globallyActiveCurseInfo.seekerSubmittedPhotoUrl} />
+                      <Button 
+                        onClick={handleHiderAcknowledgePhoto} 
+                        className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs h-9 flex items-center justify-center gap-2 shadow-md"
+                      >
+                        <CheckCircle className="h-4 w-4" /> Accept Seeker's Proof & End Curse
+                      </Button>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-amber-500 italic flex items-center gap-1.5 p-2 bg-amber-500/10 rounded-lg">
+                      <Clock className="h-3.5 w-3.5" /> Waiting for seekers to upload proof photo on their phone...
+                    </p>
+                  )
+                )}
+              </CardContent>
+            </Card>
+          ) : (
+            /* 2. ROLL & DEPLOY CURSE CARD */
+            <Card className="border-border shadow-sm">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2 text-base font-bold">
+                    <Zap className="h-5 w-5 text-purple-500" />
+                    Deploy Jet Lag Curse Die
+                  </CardTitle>
+                  <Badge variant="outline" className="text-xs font-mono font-semibold">
+                    {myTeam?.cursesUsed ?? 0} / {MAX_CURSES_PER_ROUND} Used
+                  </Badge>
+                </div>
+                <CardDescription className="text-xs">
+                  Spend {CURSE_DICE_COST} coins to inflict an authentic Jet Lag handicap on the seekers.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="p-3 bg-muted/50 rounded-xl space-y-3">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                    <Label className="text-xs font-semibold">Select Dice Mode:</Label>
+                    <div className="flex items-center gap-1.5 w-full sm:w-auto">
+                      <select
+                        value={selectedTestDie}
+                        onChange={(e) => setSelectedTestDie(e.target.value)}
+                        className="text-xs h-8 px-2.5 rounded-lg border bg-background font-medium"
+                      >
+                        <option value="random">🎲 Roll Random 1–6 (Standard)</option>
+                        <option value="1">Die #1: Freeze 15 Mins</option>
+                        <option value="2">Die #2: Silence on Transit</option>
+                        <option value="3">Die #3: Discard & Draw 2 Cards</option>
+                        <option value="4">Die #4: Vending Machine Drink</option>
+                        <option value="5">Die #5: Walk 500 Steps</option>
+                        <option value="6">Die #6: Mascot / MTR Selfie</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Optional Custom Restriction Field */}
+                  <div className="space-y-1">
+                    <Label htmlFor="hider-curse-custom-text" className="text-[11px] text-muted-foreground">
+                      Custom Constraint / Restriction (Optional):
+                    </Label>
+                    <Input
+                      id="hider-curse-custom-text"
+                      value={hiderCurseInputText}
+                      onChange={(e) => setHiderCurseInputText(e.target.value)}
+                      placeholder="e.g. Must name 3 Hong Kong animals before next station"
+                      className="text-xs h-8"
+                    />
+                  </div>
+
+                  <Button
+                    onClick={handleRollAndDeployCurse}
+                    disabled={!myTeam || myTeam.coins < CURSE_DICE_COST || (myTeam.cursesUsed || 0) >= MAX_CURSES_PER_ROUND}
+                    className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs h-10 rounded-xl shadow-md flex items-center justify-center gap-2"
+                  >
+                    <Dice5 className="h-4 w-4" />
+                    Deploy Curse Die ({CURSE_DICE_COST} Coins)
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* 3. ALL 6 CURSE DICE QUICK REFERENCE */}
+          <Card className="border-border">
+            <CardHeader className="py-2.5 px-4 bg-muted/30 border-b">
+              <CardTitle className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                Official Jet Lag Hong Kong Curse Dice Rules
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                {CURSE_DICE_OPTIONS.map((c) => {
+                  const Icon = c.icon || Zap;
+                  return (
+                    <div key={c.number} className="p-2.5 rounded-lg border bg-card space-y-1">
+                      <div className="flex items-center gap-1.5 font-bold text-foreground">
+                        <Icon className="h-3.5 w-3.5 text-purple-500 shrink-0" />
+                        <span>#{c.number}: {c.name}</span>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground leading-snug">{c.description}</p>
+                    </div>
+                  );
+                })}
+              </div>
             </CardContent>
           </Card>
         </div>

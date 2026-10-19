@@ -4,7 +4,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { Home, ShieldCheck, Search, Eye, ScrollText, Trophy, Menu, Volume2, VolumeX } from "lucide-react";
+import { Home, ShieldCheck, Search, Eye, ScrollText, Trophy, Menu, Volume2, VolumeX, FlaskConical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -14,6 +14,8 @@ import { useGameContext } from "@/hooks/useGameContext";
 import { cn } from "@/lib/utils";
 
 import { QuickRulesDrawer } from "@/components/game/QuickRulesDrawer";
+import { TestingScenarioLab } from "@/components/game/TestingScenarioLab";
+import { useState } from "react";
 
 const navItems = [
   { href: "/", label: "Home", icon: Home },
@@ -27,6 +29,7 @@ const navItems = [
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { isMobile, soundEnabled, toggleSound } = useGameContext();
+  const [isTestingLabOpen, setIsTestingLabOpen] = useState(false);
 
   const sidebarContent = (
     <ScrollArea className="h-full py-4 px-2">
@@ -46,8 +49,17 @@ export function AppShell({ children }: { children: ReactNode }) {
             <span className="sr-only">Toggle Sound</span>
           </Button>
         </div>
-        <div className="px-2 mb-2">
+        <div className="px-2 mb-2 space-y-1.5">
           <QuickRulesDrawer />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsTestingLabOpen(true)}
+            className="w-full text-xs font-bold text-purple-600 dark:text-purple-400 border-purple-500/30 hover:bg-purple-500/10 flex items-center justify-center gap-1.5 h-8 rounded-xl shadow-xs"
+          >
+            <FlaskConical className="h-3.5 w-3.5" />
+            Testing Lab
+          </Button>
         </div>
         <Separator className="my-3 bg-sidebar-border" />
         <div className="space-y-1">
@@ -84,6 +96,10 @@ export function AppShell({ children }: { children: ReactNode }) {
 
     return (
       <div className="min-h-screen flex flex-col bg-background pb-20">
+        <TestingScenarioLab
+          isOpen={isTestingLabOpen}
+          onClose={() => setIsTestingLabOpen(false)}
+        />
         <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b bg-card/95 backdrop-blur-md px-3 sm:px-6 shadow-sm">
           <Link href="/" className="flex items-center gap-2">
             <span className="font-extrabold text-base tracking-tight text-primary">
@@ -91,6 +107,15 @@ export function AppShell({ children }: { children: ReactNode }) {
             </span>
           </Link>
           <div className="flex items-center gap-1.5">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-purple-600 dark:text-purple-400 hover:bg-purple-500/10"
+              onClick={() => setIsTestingLabOpen(true)}
+              title="Jet Lag Testing Lab"
+            >
+              <FlaskConical className="h-4 w-4" />
+            </Button>
             <QuickRulesDrawer />
             <Button
               variant="ghost"
@@ -162,6 +187,10 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen grid grid-cols-[280px_1fr] bg-background">
+      <TestingScenarioLab
+        isOpen={isTestingLabOpen}
+        onClose={() => setIsTestingLabOpen(false)}
+      />
       <aside className="sticky top-0 h-screen border-r bg-sidebar text-sidebar-foreground border-sidebar-border">
         {sidebarContent}
       </aside>

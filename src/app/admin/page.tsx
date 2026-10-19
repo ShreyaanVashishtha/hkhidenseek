@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useGameContext } from "@/hooks/useGameContext";
 import type { Player, Team } from "@/lib/types";
 import { PageHeader } from "@/components/PageHeader";
-import { ShieldCheck, Users, UserPlus, Play, StopCircle, Shuffle, Trash2, Map, Forward, ZapOff, KeyRound, LogOut, Siren, Eye, Radio, Fingerprint, CheckCircle2 } from "lucide-react";
+import { ShieldCheck, Users, UserPlus, Play, StopCircle, Shuffle, Trash2, Map, Forward, ZapOff, KeyRound, LogOut, Siren, Eye, Radio, Fingerprint, CheckCircle2, FlaskConical } from "lucide-react";
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -20,6 +20,7 @@ import { MTR_STATIONS } from '@/lib/mtrData';
 import { MatchTimeline } from '@/components/game/MatchTimeline';
 import { Badge } from '@/components/ui/badge';
 import { registerAdminPasskey, hasRegisteredAdminPasskey, removeAdminPasskey, isPasskeySupported } from '@/lib/passkeyAuth';
+import { TestingScenarioLab } from '@/components/game/TestingScenarioLab';
 
 function AdminPageContent() {
   const { 
@@ -58,6 +59,7 @@ function AdminPageContent() {
   const [passkeySupported, setPasskeySupported] = useState(false);
   const [passkeyRegistered, setPasskeyRegistered] = useState(false);
   const [isRegisteringPasskey, setIsRegisteringPasskey] = useState(false);
+  const [isTestingLabOpen, setIsTestingLabOpen] = useState(false);
 
   useEffect(() => {
     isPasskeySupported().then(supported => setPasskeySupported(supported));
@@ -214,7 +216,37 @@ function AdminPageContent() {
 
   return (
     <div className="space-y-8">
+      {/* Jet Lag Testing & Simulation Studio Modal */}
+      <TestingScenarioLab
+        isOpen={isTestingLabOpen}
+        onClose={() => setIsTestingLabOpen(false)}
+      />
+
       <PageHeader title="Admin Panel" description="Manage game settings, players, teams, rounds, and access PINs." icon={ShieldCheck} />
+
+      {/* Match Simulator & Feature Testing Studio */}
+      <Card className="border-purple-500/40 bg-gradient-to-r from-purple-950/10 via-card to-indigo-950/10 shadow-md">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2 text-base font-bold text-foreground">
+              <FlaskConical className="h-5 w-5 text-purple-600" />
+              Jet Lag Testing & Match Simulation Studio
+            </CardTitle>
+            <Badge className="bg-purple-600 text-white text-xs font-bold">Dev Sandbox</Badge>
+          </div>
+          <CardDescription className="text-xs">
+            Simulate and test each feature: 6 curse dice, question matrix calculations, AI referee passes/rejects, 500m breach siren, and role-swap finale.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button
+            onClick={() => setIsTestingLabOpen(true)}
+            className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold h-11 rounded-xl shadow-md flex items-center justify-center gap-2"
+          >
+            <FlaskConical className="h-4 w-4" /> Open Match Simulation & Feature Testing Lab
+          </Button>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

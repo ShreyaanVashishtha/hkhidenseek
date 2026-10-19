@@ -1,5 +1,6 @@
 "use client";
 
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
@@ -19,39 +20,59 @@ import {
   Fingerprint, 
   Compass, 
   Shield, 
-  Train 
+  Train,
+  FlaskConical,
+  Play
 } from 'lucide-react';
 import { useGameContext } from '@/hooks/useGameContext';
 import { MatchTimeline } from '@/components/game/MatchTimeline';
 import { QuickRulesDrawer } from '@/components/game/QuickRulesDrawer';
+import { TestingScenarioLab } from '@/components/game/TestingScenarioLab';
 import { triggerHaptic } from '@/lib/haptics';
 
 export default function HomePage() {
   const { currentRound, eliminatedStationIds, teams } = useGameContext();
+  const [isTestingLabOpen, setIsTestingLabOpen] = useState(false);
+
   const isRoundActive = currentRound && (currentRound.status === 'hiding-phase' || currentRound.status === 'seeking-phase');
   const remainingCandidates = 70 - (eliminatedStationIds?.length || 0);
 
   return (
     <div className="max-w-5xl mx-auto space-y-8 pb-10">
+      {/* Testing & Simulation Studio Modal */}
+      <TestingScenarioLab
+        isOpen={isTestingLabOpen}
+        onClose={() => setIsTestingLabOpen(false)}
+      />
+
       {/* Hero Header */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-950 via-[#0d1527] to-slate-900 border border-slate-800 p-6 sm:p-10 shadow-2xl">
+      <div className="relative overflow-hidden rounded-3xl bg-slate-950 border border-slate-800 p-6 sm:p-10 shadow-2xl text-white">
         <div className="relative z-10 space-y-4 max-w-2xl">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge className="bg-sky-500/15 text-sky-400 border-sky-500/30 text-xs font-mono font-bold px-3 py-1 flex items-center gap-1.5">
+            <Badge className="bg-sky-500/20 text-sky-300 border-sky-400/40 text-xs font-mono font-bold px-3 py-1 flex items-center gap-1.5 shadow-sm">
               <Train className="h-3.5 w-3.5" />
               Hong Kong MTR Edition
             </Badge>
-            <Badge className="bg-purple-500/15 text-purple-400 border-purple-500/30 text-xs font-mono font-bold px-3 py-1 flex items-center gap-1.5">
+            <Badge className="bg-purple-500/20 text-purple-300 border-purple-400/40 text-xs font-mono font-bold px-3 py-1 flex items-center gap-1.5 shadow-sm">
               <Sparkles className="h-3.5 w-3.5" />
               AI Clue Referee
             </Badge>
           </div>
 
           <h1 className="text-3xl sm:text-5xl font-black tracking-tight text-white uppercase leading-none">
-            Jet Lag: <span className="text-transparent bg-clip-text bg-gradient-to-r from-sky-400 via-emerald-400 to-amber-300">Hong Kong</span>
+            Jet Lag:{" "}
+            <span 
+              className="bg-gradient-to-r from-sky-300 via-emerald-300 to-amber-300 bg-clip-text text-transparent inline-block font-black"
+              style={{
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+              }}
+            >
+              Hong Kong
+            </span>
           </h1>
 
-          <p className="text-sm sm:text-base text-slate-300 leading-relaxed">
+          <p className="text-sm sm:text-base text-slate-200 leading-relaxed font-normal">
             The ultimate game of hide and seek across <strong>70 MTR subway stations</strong>. 
             Hiders lock in a 500m safe zone and deploy curse dice, while seekers ride the rails, draw challenge cards, and ask precision radar clues.
           </p>
@@ -62,13 +83,25 @@ export default function HomePage() {
               asChild
               variant="outline"
               size="sm"
-              className="h-8 text-xs px-3 rounded-full border-slate-700 bg-slate-900/60 text-slate-200 hover:bg-slate-800"
+              className="h-8 text-xs px-3 rounded-full border-slate-700 bg-slate-900/80 text-slate-100 hover:bg-slate-800 hover:text-white"
               onClick={() => triggerHaptic('light')}
             >
               <Link href="/leaderboard">
                 <Trophy className="h-3.5 w-3.5 mr-1 text-amber-400" />
                 Scores & History
               </Link>
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => {
+                triggerHaptic('medium');
+                setIsTestingLabOpen(true);
+              }}
+              className="h-8 text-xs px-3.5 rounded-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold shadow-md flex items-center gap-1.5"
+            >
+              <FlaskConical className="h-3.5 w-3.5" />
+              Test Scenario Lab
             </Button>
           </div>
         </div>
@@ -85,8 +118,8 @@ export default function HomePage() {
 
       {/* Live Match Radar Banner (if game active) */}
       {isRoundActive && (
-        <Card className="border-sky-500/40 bg-gradient-to-r from-sky-950/40 via-[#0c1424] to-emerald-950/30 shadow-xl overflow-hidden animate-in fade-in">
-          <CardHeader className="pb-3 border-b border-slate-800/80">
+        <Card className="border-sky-500/40 bg-gradient-to-r from-sky-950/90 via-slate-950 to-emerald-950/80 text-white shadow-xl overflow-hidden animate-in fade-in">
+          <CardHeader className="pb-3 border-b border-slate-800">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2.5">
                 <span className="relative flex h-3 w-3">
@@ -98,8 +131,8 @@ export default function HomePage() {
                     <Radio className="h-5 w-5 text-emerald-400 animate-pulse" />
                     Round {currentRound.roundNumber} is Currently Live!
                   </CardTitle>
-                  <CardDescription className="text-xs text-slate-400 mt-0.5">
-                    Hiding: <strong>{currentRound.hidingTeam?.name || 'Hiders'}</strong> • Remaining Candidates: <strong>{remainingCandidates}/70 Stations</strong>
+                  <CardDescription className="text-xs text-slate-300 mt-0.5">
+                    Hiding: <strong className="text-emerald-300">{currentRound.hidingTeam?.name || 'Hiders'}</strong> • Remaining Candidates: <strong className="text-sky-300">{remainingCandidates}/70 Stations</strong>
                   </CardDescription>
                 </div>
               </div>
@@ -117,7 +150,7 @@ export default function HomePage() {
             </div>
           </CardHeader>
           <CardContent className="pt-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <p className="text-xs text-slate-300">
+            <p className="text-xs text-slate-200">
               The game is underway! Jump directly into your active role to track locations or answer questions.
             </p>
             <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -126,7 +159,7 @@ export default function HomePage() {
                   Resume as Seeker
                 </Link>
               </Button>
-              <Button asChild variant="outline" className="w-full sm:w-auto border-emerald-600 text-emerald-400 hover:bg-emerald-950/40 font-bold text-xs h-9 px-4 rounded-xl">
+              <Button asChild variant="outline" className="w-full sm:w-auto border-emerald-500 text-emerald-300 hover:bg-emerald-950/60 font-bold text-xs h-9 px-4 rounded-xl">
                 <Link href="/hider" onClick={() => triggerHaptic('light')}>
                   Resume as Hider
                 </Link>
@@ -138,21 +171,32 @@ export default function HomePage() {
 
       {/* Role Launchpad Cards */}
       <section className="space-y-4">
-        <h2 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-          <span>Choose Your Role</span>
-        </h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-2xl font-black tracking-tight text-foreground flex items-center gap-2">
+            <span>Choose Your Role</span>
+          </h2>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsTestingLabOpen(true)}
+            className="text-xs font-bold text-purple-600 dark:text-purple-400 hover:bg-purple-500/10"
+          >
+            <FlaskConical className="h-3.5 w-3.5 mr-1" /> Open Test Lab
+          </Button>
+        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           {/* SEEKER CARD */}
-          <Card className="bg-gradient-to-b from-sky-950/40 via-card to-card border-sky-500/30 hover:border-sky-500/60 transition-all flex flex-col justify-between shadow-lg group">
+          <Card className="bg-card text-card-foreground border-border hover:border-sky-500/60 transition-all flex flex-col justify-between shadow-sm hover:shadow-md group">
             <CardHeader className="pb-3">
-              <div className="w-12 h-12 rounded-2xl bg-sky-500/10 border border-sky-500/20 text-sky-400 flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
+              <div className="w-12 h-12 rounded-2xl bg-sky-500/10 border border-sky-500/20 text-sky-600 dark:text-sky-400 flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
                 <Search className="h-6 w-6" />
               </div>
-              <CardTitle className="text-lg font-bold text-white group-hover:text-sky-400 transition-colors">
+              <CardTitle className="text-xl font-black text-foreground group-hover:text-sky-600 dark:group-hover:text-sky-400 transition-colors">
                 Seeker HQ
               </CardTitle>
-              <CardDescription className="text-xs text-slate-300 leading-relaxed pt-1">
+              <CardDescription className="text-xs text-muted-foreground leading-relaxed pt-1 font-normal">
                 Hunt down the hiders across the MTR. Complete challenge cards with the <strong>Gemini AI Referee</strong>, ask Radar & Thermometer clues, and cross off candidate stations.
               </CardDescription>
             </CardHeader>
@@ -166,16 +210,16 @@ export default function HomePage() {
           </Card>
 
           {/* HIDER CARD */}
-          <Card className="bg-gradient-to-b from-emerald-950/40 via-card to-card border-emerald-500/30 hover:border-emerald-500/60 transition-all flex flex-col justify-between shadow-lg group">
+          <Card className="bg-card text-card-foreground border-border hover:border-emerald-500/60 transition-all flex flex-col justify-between shadow-sm hover:shadow-md group">
             <CardHeader className="pb-3">
-              <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
                 <Eye className="h-6 w-6" />
               </div>
-              <CardTitle className="text-lg font-bold text-white group-hover:text-emerald-400 transition-colors">
+              <CardTitle className="text-xl font-black text-foreground group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
                 Hider Safehouse
               </CardTitle>
-              <CardDescription className="text-xs text-slate-300 leading-relaxed pt-1">
-                Choose your station, lock in your 500m territory, answer seeker questions to accumulate coins, and roll <strong>Curse Dice</strong> to freeze or blind the hunters.
+              <CardDescription className="text-xs text-muted-foreground leading-relaxed pt-1 font-normal">
+                Choose your station, lock in your 500m territory, answer seeker questions to accumulate coins, and deploy <strong>Curse Dice</strong> to freeze or blind the hunters.
               </CardDescription>
             </CardHeader>
             <CardFooter className="pt-0">
@@ -188,23 +232,23 @@ export default function HomePage() {
           </Card>
 
           {/* ADMIN CARD */}
-          <Card className="bg-gradient-to-b from-purple-950/40 via-card to-card border-purple-500/30 hover:border-purple-500/60 transition-all flex flex-col justify-between shadow-lg group">
+          <Card className="bg-card text-card-foreground border-border hover:border-purple-500/60 transition-all flex flex-col justify-between shadow-sm hover:shadow-md group">
             <CardHeader className="pb-3">
-              <div className="w-12 h-12 rounded-2xl bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
+              <div className="w-12 h-12 rounded-2xl bg-purple-500/10 border border-purple-500/20 text-purple-600 dark:text-purple-400 flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
                 <Fingerprint className="h-6 w-6" />
               </div>
-              <CardTitle className="text-lg font-bold text-white group-hover:text-purple-400 transition-colors flex items-center gap-2">
+              <CardTitle className="text-xl font-black text-foreground group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors flex items-center gap-2">
                 <span>Admin Command</span>
-                <Badge variant="outline" className="text-[10px] text-purple-400 border-purple-500/40">
+                <Badge variant="outline" className="text-[10px] text-purple-600 dark:text-purple-400 border-purple-500/40">
                   Passkey
                 </Badge>
               </CardTitle>
-              <CardDescription className="text-xs text-slate-300 leading-relaxed pt-1">
+              <CardDescription className="text-xs text-muted-foreground leading-relaxed pt-1 font-normal">
                 Match control center. Start and end rounds, shuffle teams, log GPS breach events, and log in with native <strong>Face ID / Touch ID</strong> biometrics.
               </CardDescription>
             </CardHeader>
             <CardFooter className="pt-0">
-              <Button asChild variant="outline" className="w-full border-purple-500/50 text-purple-300 hover:bg-purple-950/40 font-bold text-xs h-10 rounded-xl">
+              <Button asChild variant="outline" className="w-full border-purple-500/40 text-purple-600 dark:text-purple-400 hover:bg-purple-500/10 font-bold text-xs h-10 rounded-xl">
                 <Link href="/admin" onClick={() => triggerHaptic('light')} className="flex items-center justify-center gap-2">
                   Open Admin Panel <ArrowRight className="h-4 w-4" />
                 </Link>
@@ -217,7 +261,7 @@ export default function HomePage() {
       {/* Match Timeline Feed (if available) */}
       {currentRound?.timeline && currentRound.timeline.length > 0 && (
         <section className="space-y-3">
-          <h2 className="text-lg font-bold text-white flex items-center gap-2">
+          <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
             <span>Match Event Feed</span>
           </h2>
           <MatchTimeline events={currentRound.timeline} />

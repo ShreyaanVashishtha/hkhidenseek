@@ -134,18 +134,57 @@ export function AIRefereeModal({
     } catch (e: any) {
       console.warn("[AIRefereeModal] Verification fallback triggered:", e);
       const fallback: AIRefereeVerdict = {
-        approved: true,
-        confidence: 88,
-        verdictTitle: `APPROVED: ${taskTitle} Verified!`,
+        approved: false,
+        confidence: 70,
+        verdictTitle: `REJECTED: Verification Disqualified ❌`,
         refereeCommentary:
-          "The referee desk has inspected the footage: Photo proof confirmed on site. Full reward granted!",
-        detectedElements: ["Photo submission verified", "Location confirmed"],
+          `Ben & Adam in the booth: Unable to confirm photo proof for "${taskTitle}". Please retake with clearer evidence or use Referee Dispute.`,
+        detectedElements: ["Unverified Photo", "Missing Clear Evidence"],
         isAiPowered: false,
       };
       setProgress(100);
       setVerdict(fallback);
       setAnalyzing(false);
-      soundEffects.playVictory();
+      soundEffects.playCurseAlarm();
+    }
+  };
+
+  const handleSimulateVerdict = async (shouldApprove: boolean) => {
+    setAnalyzing(true);
+    setProgress(35);
+    try {
+      let dataUrl = photoUrl || "data:image/jpeg;base64,/9j/4AAQSkZJRg==";
+      if (photoFile) {
+        dataUrl = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.readAsDataURL(photoFile);
+        });
+      }
+      setProgress(75);
+      const res = await fetch("/api/ai/verify-photo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          taskType,
+          taskTitle,
+          taskDescription,
+          photoDataUrl: dataUrl,
+          category,
+          simulatedVerdict: shouldApprove ? 'approve' : 'reject',
+        }),
+      });
+      const result: AIRefereeVerdict = await res.json();
+      setProgress(100);
+      setVerdict(result);
+      setAnalyzing(false);
+      if (result.approved) {
+        soundEffects.playVictory();
+      } else {
+        soundEffects.playCurseAlarm();
+      }
+    } catch {
+      setAnalyzing(false);
     }
   };
 
@@ -280,6 +319,33 @@ export function AIRefereeModal({
               </div>
             </div>
           )}
+        </div>
+
+        {/* Test Simulator Controls */}
+        <div className="pt-2 border-t flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+          <span>AI Testing Sandbox:</span>
+          <div className="flex items-center gap-1.5">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={analyzing}
+              onClick={() => handleSimulateVerdict(true)}
+              className="h-6 text-[10px] px-2 text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/10 font-bold"
+            >
+              Simulate Pass ✅
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={analyzing}
+              onClick={() => handleSimulateVerdict(false)}
+              className="h-6 text-[10px] px-2 text-red-600 border-red-500/30 hover:bg-red-500/10 font-bold"
+            >
+              Simulate Reject ❌
+            </Button>
+          </div>
         </div>
 
         <DialogFooter className="flex flex-col sm:flex-row gap-2">
